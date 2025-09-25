@@ -251,9 +251,14 @@ class MultiRegionMonitor:
 
 
 class ScreenCapture:
-	def __init__(self, on_capture: Callable[[Tuple[int, int, int, int]], None] = None):
-		"""UI flow to select multiple regions, then start real-time region monitoring."""
+	def __init__(self, on_capture: Callable[[Tuple[int, int, int, int]], None] = None, on_region_change: Optional[Callable[[int, Image.Image, int], None]] = None):
+		"""UI flow to select multiple regions, then start real-time region monitoring.
+
+		- on_capture: callback mỗi lần người dùng chọn xong một vùng.
+		- on_region_change: callback khi vùng thay đổi (idx, PIL.Image, scan_counter).
+		"""
 		self.on_capture = on_capture
+		self.on_region_change = on_region_change
 		self.start_x = self.start_y = 0
 		self.canvas = None
 		self.rect_id = None
@@ -356,7 +361,7 @@ class ScreenCapture:
 		self._monitor = MultiRegionMonitor(
 			regions,
 			fps=8,
-			on_region_change=lambda idx, img, scan: self._viewer.enqueue_update(idx, img),
+			on_region_change=lambda idx, img, scan: self._handle_region_change(idx, img, scan),
 			on_scan=lambda scan: self._viewer.update_scan_counter(scan),
 			logical_screen_size=self._get_logical_screen_size(),
 			sensitivity=0.85,
@@ -365,6 +370,18 @@ class ScreenCapture:
 		self._viewer.set_stop_callback(lambda: self._monitor.stop(join=True))
 		self._monitor.start()
 		self._viewer.show()
+
+	def _handle_region_change(self, idx: int, img: Image.Image, scan: int):
+		"""Forward region image to viewer and external callback (if any)."""
+		try:
+			self._viewer.enqueue_update(idx, img)
+		except Exception:
+			pass
+		if self.on_region_change is not None:
+			try:
+				self.on_region_change(idx, img, scan)
+			except Exception:
+				pass
 
 	def _get_logical_screen_size(self) -> Tuple[int, int]:
 		"""Return Tk logical screen size used for DPI scaling compensation."""

@@ -1,16 +1,14 @@
 import pytesseract
-from PIL import ImageGrab
+from PIL import ImageGrab, Image
 import re
 # Đường dẫn Tesseract.exe
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-def run_ocr():
-    # 1. Chụp màn hình
-    screenshot = ImageGrab.grab()
+def _image_to_lines(image: Image.Image):
     # 2. Config cho Tesseract
     custom_oem_psm_config = r'--oem 3 --psm 6'
     # 3. OCR lấy dữ liệu chi tiết
-    data = pytesseract.image_to_data(screenshot, lang="eng+vie", config=custom_oem_psm_config, output_type=pytesseract.Output.DICT)
+    data = pytesseract.image_to_data(image, lang="eng+vie", config=custom_oem_psm_config, output_type=pytesseract.Output.DICT)
 
     # 4. Gom text theo dòng
     lines = {}
@@ -50,6 +48,17 @@ def run_ocr():
 
     # 5. Trả kết quả
     return lines
+
+
+def run_ocr_on_image(image: Image.Image):
+    """Chạy OCR trên một ảnh vùng (PIL.Image)."""
+    return _image_to_lines(image)
+
+
+def run_ocr():
+    # 1. Chụp màn hình
+    screenshot = ImageGrab.grab()
+    return _image_to_lines(screenshot)
 
 # # 5. Print kết quả
 # print("Kết quả OCR (lọc conf > 70):")
