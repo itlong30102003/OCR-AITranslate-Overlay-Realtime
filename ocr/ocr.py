@@ -6,9 +6,9 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 
 def _image_to_lines(image: Image.Image):
     # 2. Config cho Tesseract
-    custom_oem_psm_config = r'--oem 1 --psm 6'
+    custom_config = r'--oem 1 --psm 6 -l eng+vie+jpn+chi_sim+fra'
     # 3. OCR lấy dữ liệu chi tiết
-    data = pytesseract.image_to_data(image, lang="eng+vie", config=custom_oem_psm_config, output_type=pytesseract.Output.DICT)
+    data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
     # 4. Gom text theo dòng
     lines = {}
@@ -26,16 +26,31 @@ def _image_to_lines(image: Image.Image):
         x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
 
         # Bộ lọc chống tạp nham
-        if w < 5:  # bỏ bbox quá nhỏ (rác)
+        if w < 5:  # Bỏ bbox quá nhỏ (rác OCR)
             continue
 
-        # Regex giữ lại Latin, Tiếng Việt, Nhật (Kanji, Hiragana, Katakana), số, và dấu câu
-        pattern = r'[A-Za-zÀ-ỹ一-龯ぁ-んァ-ヶー々〆〤0-9。、！？「」『』.,!?;:()\-–—"\'“”‘’=_+%#@*\[\]{}<>/\\]'
+        # Regex giữ lại Latin (có dấu), Nhật/Trung, số, dấu câu, symbol phổ biến
+        pattern = (
+            r'[A-Za-zÀ-ỹ'                      # Latin + Tiếng Việt/French accents
+            r'\u4E00-\u9FFF\u3400-\u4DBF'      # Chinese Hanzi (basic + Ext A)
+            r'一-龯ぁ-んァ-ヶー々〆〤'            # Japanese Kanji + Hiragana + Katakana
+            r'0-9'                             # Số
+            r'。、！？：；「」『』（）［］｛｝'  # Dấu câu Nhật/Trung
+            r'.,!?;:()\-\–—"\'“”‘’'            # Dấu câu Latin
+            r'=_+%#@*\[\]{}<>/\\]'             # Symbol phổ biến
+        )
+
+        # Nếu text không chứa ký tự hợp lệ → bỏ
         if not re.search(pattern, text):
             continue
-        # Nếu text quá ngắn (<2 ký tự) nhưng KHÔNG phải tiếng Nhật thì bỏ
-        if len(text.strip()) < 2 and not re.search(r'[一-龯ぁ-んァ-ヶ]', text):
-            continue
+
+        # Loại text quá ngắn không hợp lệ
+        text_stripped = text.strip()
+        if len(text_stripped) < 2:
+            # Nếu không phải chữ Nhật/Trung → bỏ
+            if not re.search(r'[\u4E00-\u9FFFぁ-んァ-ヶ]', text_stripped):
+                continue
+
             
         
         if line_id not in lines:
