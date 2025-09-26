@@ -19,7 +19,7 @@ def _image_to_lines(image: Image.Image):
             continue
 
         conf = data['conf'][i]  
-        if conf <= 50:
+        if conf <= 60:
             continue  # bỏ text kém chất lượng
 
         line_id = (data['page_num'][i], data['block_num'][i], data['par_num'][i], data['line_num'][i])
