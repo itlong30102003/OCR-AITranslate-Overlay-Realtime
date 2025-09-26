@@ -6,7 +6,7 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 
 def _image_to_lines(image: Image.Image):
     # 2. Config cho Tesseract
-    custom_oem_psm_config = r'--oem 3 --psm 6'
+    custom_oem_psm_config = r'--oem 1 --psm 6'
     # 3. OCR lấy dữ liệu chi tiết
     data = pytesseract.image_to_data(image, lang="eng+vie", config=custom_oem_psm_config, output_type=pytesseract.Output.DICT)
 
@@ -30,7 +30,7 @@ def _image_to_lines(image: Image.Image):
             continue
 
         # Regex giữ lại Latin, Tiếng Việt, Nhật (Kanji, Hiragana, Katakana), số, và dấu câu
-        pattern = r'[A-Za-zÀ-ỹ一-龯ぁ-んァ-ヶー々〆〤0-9。、！？「」『』.,!?;:()\-–—"\'“”‘’]'
+        pattern = r'[A-Za-zÀ-ỹ一-龯ぁ-んァ-ヶー々〆〤0-9。、！？「」『』.,!?;:()\-–—"\'“”‘’=_+%#@*\[\]{}<>/\\]'
         if not re.search(pattern, text):
             continue
         # Nếu text quá ngắn (<2 ký tự) nhưng KHÔNG phải tiếng Nhật thì bỏ
