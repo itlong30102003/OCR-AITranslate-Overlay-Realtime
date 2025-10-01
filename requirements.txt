@@ -1,0 +1,35 @@
+# ===========================================
+# OCR AI Translate Overlay - Requirements
+# Optimized for fast deployment
+# ===========================================
+
+# Core system dependencies (install first)
+numpy>=1.24.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+requests>=2.31.0
+
+# OCR dependencies
+pytesseract>=0.3.10
+
+# Translation engine dependencies
+google-generativeai>=0.3.0
+langdetect>=1.0.9
+
+# Machine Learning dependencies (CPU optimized)
+torch>=2.0.0+cpu --index-url https://download.pytorch.org/whl/cpu
+transformers>=4.30.0
+sentencepiece>=0.1.99
+
+# Performance optimization (optional)
+accelerate>=0.20.0
+optimum>=1.12.0
+
+# GUI and overlay dependencies
+tkinter  # Usually included with Python
+pygame>=2.5.0  # For overlay rendering
+
+# Development tools (optional - comment out for production)
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0
