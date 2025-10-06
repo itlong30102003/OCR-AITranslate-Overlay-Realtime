@@ -25,8 +25,8 @@ def _image_to_lines(image: Image.Image):
         line_id = (data['page_num'][i], data['block_num'][i], data['par_num'][i], data['line_num'][i])
         x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
 
-        # Bộ lọc chống tạp nham
-        if w < 5:  # Bỏ bbox quá nhỏ (rác OCR)
+        # Bộ lọc chống tạp nham - loại bỏ icon và ký hiệu nhỏ
+        if w < 8 or h < 8:  # Bỏ bbox quá nhỏ (icon, ký hiệu)
             continue
 
         # Regex giữ lại Latin (có dấu), Nhật/Trung, số, dấu câu, symbol phổ biến
@@ -35,11 +35,19 @@ def _image_to_lines(image: Image.Image):
             r'\u4E00-\u9FFF\u3400-\u4DBF'      # Chinese Hanzi (basic + Ext A)
             r'一-龯ぁ-んァ-ヶー々〆〤'            # Japanese Kanji + Hiragana + Katakana
             r'0-9'                             # Số
-            r'。、！？：；「」『』（）［］｛｝'  # Dấu câu Nhật/Trung
-            r'.,!?;:()\-\–—"\'“”‘’'            # Dấu câu Latin
-            r'=_+%#@*\[\]{}<>/\\]'             # Symbol phổ biến
+            r'。、！？：；「」『』（）［］｛｝'         # Dấu câu Nhật/Trung
+            r'.,!\?;:()–—"\'""'''               # Dấu câu Latin
+            r'=_%#@\*\[\]{}<>/\\\-\+_\s]'        # Symbol phổ biến + space (bao gồm - = _ + space)
         )
 
+        # Lọc bỏ emoji khỏi text nhưng vẫn giữ lại chữ
+        icon_pattern = r'[\u2190-\u21FF\u2600-\u26FF\u2700-\u27BF\U0001F300-\U0001FAFF]'
+        text = re.sub(icon_pattern, '', text).strip()
+        
+        # Nếu sau khi lọc icon mà text rỗng → bỏ
+        if not text:
+            continue
+            
         # Nếu text không chứa ký tự hợp lệ → bỏ
         if not re.search(pattern, text):
             continue
