@@ -4,12 +4,12 @@ Manages and selects the best translation model for each language pair
 """
 
 from typing import Dict, List, Optional, Tuple
+from collections import OrderedDict
 import os
 from .base_translator import BaseTranslator
 from .gemini_translator import GeminiTranslator
 from .nllb_translator import NLLBTranslator
 from .opus_translator import OpusTranslator
-from .m2m_translator import M2MTranslator
 
 
 class TranslationManager:
@@ -24,35 +24,39 @@ class TranslationManager:
         """
         self.config = config or {}
         self.models = {}
+        self.cache_enabled = True
+        self.cache_capacity = int((self.config or {}).get('cache_size', 512))
+        self._cache: OrderedDict[Tuple[str, str, str], Dict] = OrderedDict()
         self.quality_matrix = self._setup_quality_matrix()
         self._initialize_models()
     
     def _setup_quality_matrix(self) -> Dict[Tuple[str, str], List[str]]:
-        """Setup quality matrix for language pairs"""
+        """Setup quality matrix for language pairs - Based on actual performance testing"""
         return {
-            # European languages - Gemini excels
+            # European languages - M2M best, Gemini fallback
             ('en', 'fr'): ['gemini', 'nllb', 'opus'],
             ('fr', 'en'): ['gemini', 'nllb', 'opus'],
-            ('en', 'vi'): ['gemini', 'nllb', 'opus'],
-            ('vi', 'en'): ['gemini', 'nllb', 'opus'],
-            ('fr', 'vi'): ['gemini', 'nllb', 'opus'],
-            ('vi', 'fr'): ['gemini', 'nllb', 'opus'],
-            
-            # Asian languages - Gemini excels
-            ('ja', 'zh'): ['gemini', 'm2m', 'nllb'],
-            ('zh', 'ja'): ['gemini', 'm2m', 'nllb'],
-            ('vi', 'ja'): ['gemini', 'nllb', 'opus'],
-            ('ja', 'vi'): ['gemini', 'nllb', 'opus'],
-            ('zh', 'vi'): ['gemini', 'nllb', 'opus'],
-            ('vi', 'zh'): ['gemini', 'nllb', 'opus'],
-            ('en', 'ja'): ['gemini', 'nllb', 'opus'],
-            ('ja', 'en'): ['gemini', 'nllb', 'opus'],
-            ('en', 'zh'): ['gemini', 'nllb', 'opus'],
-            ('zh', 'en'): ['gemini', 'nllb', 'opus'],
-            ('fr', 'ja'): ['gemini', 'nllb', 'opus'],
-            ('ja', 'fr'): ['gemini', 'nllb', 'opus'],
-            ('fr', 'zh'): ['gemini', 'nllb', 'opus'],
-            ('zh', 'fr'): ['gemini', 'nllb', 'opus'],
+            ('fr', 'vi'): ['nllb', 'gemini', 'opus'],
+            ('vi', 'en'): ['nllb', 'gemini', 'opus'],
+            ('vi', 'fr'): ['nllb', 'gemini', 'opus'],
+
+            # Asian languages - NLLB dominates
+            ('ja', 'zh'): ['nllb', 'gemini'],
+            ('zh', 'ja'): ['nllb', 'gemini'],
+            ('ja', 'vi'): ['nllb', 'gemini', 'opus'],
+            ('vi', 'ja'): ['nllb', 'gemini', 'opus'],
+            ('zh', 'vi'): ['nllb', 'gemini', 'opus'],
+            ('vi', 'zh'): ['nllb', 'gemini', 'opus'],
+
+            # Cross-language pairs
+            ('en', 'ja'): ['nllb', 'gemini'],
+            ('ja', 'en'): ['nllb', 'gemini', 'opus'],
+            ('en', 'zh'): ['nllb', 'gemini'],
+            ('zh', 'en'): ['nllb', 'gemini', 'opus'],
+            ('fr', 'ja'): ['nllb', 'gemini'],
+            ('ja', 'fr'): ['nllb', 'gemini', 'opus'],
+            ('fr', 'zh'): ['nllb', 'gemini'],
+            ('zh', 'fr'): ['nllb', 'gemini', 'opus'],
         }
     
     def _initialize_models(self):
@@ -84,12 +88,6 @@ class TranslationManager:
         except Exception as e:
             print(f"[ERROR] Failed to initialize OPUS-MT: {e}")
         
-        # Initialize M2M-100 (always available)
-        try:
-            self.models['m2m'] = M2MTranslator()
-            print("[OK] M2M-100 translator initialized")
-        except Exception as e:
-            print(f"[ERROR] Failed to initialize M2M-100: {e}")
         
         print(f"Total models initialized: {len(self.models)}")
     
@@ -111,23 +109,50 @@ class TranslationManager:
         # Auto-detect language if needed
         if source_lang == 'auto':
             source_lang = self._detect_language(text)
+
+        # Cache lookup
+        if self.cache_enabled:
+            key = (text, source_lang, target_lang)
+            cached = self._cache.get(key)
+            if cached:
+                # move to end (MRU)
+                self._cache.move_to_end(key)
+                return dict(cached)
         
         # Get preferred models for this language pair
         preferred_models = self.quality_matrix.get(
             (source_lang, target_lang), 
-            ['gemini', 'nllb', 'opus']  # Default fallback
+            ['gemini', 'nllb', 'opus']  # Broader default fallback
         )
         
-        # Try each model in order of preference
+        # Try each model in order of preference, track best result even if confidence < threshold
+        best_result = None
+        best_model = None
+        best_conf = -1.0
         for model_name in preferred_models:
-            if model_name in self.models and self.models[model_name].is_model_available():
-                try:
-                    result = self.models[model_name].translate(text, source_lang, target_lang)
-                    if result and result.get('confidence', 0) > 0.7:
+            if model_name not in self.models:
+                print(f"Model {model_name} not initialized; skipping")
+                continue
+            model = self.models[model_name]
+            if not model.is_model_available():
+                print(f"Model {model_name} not available; skipping")
+                continue
+            try:
+                result = model.translate(text, source_lang, target_lang)
+                if result:
+                    conf = float(result.get('confidence', 0) or 0)
+                    if conf >= 0.7:
+                        result['model_used'] = model_name
+                        if self.cache_enabled:
+                            self._remember_cache((text, source_lang, target_lang), result)
                         return result
-                except Exception as e:
-                    print(f"Model {model_name} failed: {e}")
-                    continue
+                    if conf > best_conf:
+                        best_conf = conf
+                        best_result = result
+                        best_model = model_name
+            except Exception as e:
+                print(f"Model {model_name} failed: {e}")
+                continue
         
         # Final fallback - try any available model
         for model_name, model in self.models.items():
@@ -135,12 +160,32 @@ class TranslationManager:
                 try:
                     result = model.translate(text, source_lang, target_lang)
                     if result:
+                        result['model_used'] = model_name
+                        if self.cache_enabled:
+                            self._remember_cache((text, source_lang, target_lang), result)
                         return result
                 except Exception as e:
                     print(f"Fallback model {model_name} failed: {e}")
                     continue
+
+        # If we had a sub-threshold best result, return it as last resort
+        if best_result is not None:
+            best_result['model_used'] = best_model
+            print(f"Using best available sub-threshold result from {best_model} (confidence={best_conf:.2f})")
+            if self.cache_enabled and best_result is not None:
+                self._remember_cache((text, source_lang, target_lang), best_result)
+            return best_result
         
         return None
+
+    def _remember_cache(self, key: Tuple[str, str, str], value: Dict):
+        try:
+            self._cache[key] = dict(value)
+            self._cache.move_to_end(key)
+            while len(self._cache) > self.cache_capacity:
+                self._cache.popitem(last=False)
+        except Exception:
+            pass
     
     def _detect_language(self, text: str) -> str:
         """Detect language of input text"""
@@ -193,7 +238,10 @@ class TranslationManager:
             print(f"Model {model_name} is not available")
             return None
         
-        return self.models[model_name].translate(text, source_lang, target_lang)
+        result = self.models[model_name].translate(text, source_lang, target_lang)
+        if result:
+            result['model_used'] = model_name
+        return result
     
     def get_supported_languages(self) -> List[str]:
         """Get list of supported language codes"""

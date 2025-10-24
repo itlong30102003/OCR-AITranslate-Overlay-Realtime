@@ -57,19 +57,19 @@ class NLLBTranslator(BaseTranslator):
         
         src = lang_map.get(source_lang, source_lang)
         tgt = lang_map.get(target_lang, target_lang)
-        
+            
         try:
+            # Set source language for tokenizer
+            self.tokenizer.src_lang = src
+            
             # Tokenize input
             inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
             
             # Generate translation
             with torch.no_grad():
-                # Get target language token ID
-                target_token_id = self.tokenizer.convert_tokens_to_ids(f"__{tgt}__")
-                
                 outputs = self.model.generate(
                     **inputs,
-                    forced_bos_token_id=target_token_id,
+                    forced_bos_token_id=self.tokenizer.convert_tokens_to_ids(f"__{tgt}__"),
                     max_length=512,
                     num_beams=4,
                     early_stopping=True

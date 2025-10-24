@@ -521,6 +521,11 @@ class RegionViewer:
 			self.root.quit()
 		except Exception:
 			pass
+		# Ensure the root is destroyed to fully exit the UI loop
+		try:
+			self.root.destroy()
+		except Exception:
+			pass
 
 
 def my_callback(coords):

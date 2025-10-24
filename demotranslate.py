@@ -39,25 +39,25 @@ class DemoTranslation:
                 "J'aime la programmation"
             ],
             'ja': [
-                "こんにちは世界",
-                "これはテストメッセージです",
-                "今日はどうですか？",
-                "今日は天気がいいです",
-                "プログラミングが好きです"
+                "Konnichiwa sekai",
+                "Kore wa test message desu", 
+                "Kyou wa dou desu ka?",
+                "Kyou wa tenki ga ii desu",
+                "Programming ga suki desu"
             ],
             'zh': [
-                "你好世界",
-                "这是一个测试消息",
-                "你今天怎么样？",
-                "今天天气很好",
-                "我喜欢编程"
+                "Ni hao shi jie",
+                "Zhe shi yi ge ce shi xiao xi",
+                "Ni jin tian zen me yang?",
+                "Jin tian tian qi hen hao",
+                "Wo xi huan bian cheng"
             ],
             'vi': [
-                "Xin chào thế giới",
-                "Đây là tin nhắn thử nghiệm",
-                "Hôm nay bạn thế nào?",
-                "Hôm nay thời tiết đẹp",
-                "Tôi thích lập trình"
+                "Xin chao the gioi",
+                "Day la tin nhan thu nghiem",
+                "Hom nay ban the nao?",
+                "Hom nay thoi tiet dep",
+                "Toi thich lap trinh"
             ]
         }
         
@@ -78,7 +78,10 @@ class DemoTranslation:
         end_time = time.time()
         
         if result:
-            print(f"[OK] Translated: '{result['text']}'")
+            try:
+                print(f"[OK] Translated: '{result['text']}'")
+            except UnicodeEncodeError:
+                print(f"[OK] Translated: {result['text'].encode('ascii', 'replace').decode('ascii')}")
             print(f"[OK] Model: {result.get('model_used', 'unknown')}")
             print(f"[OK] Confidence: {result.get('confidence', 0):.2f}")
             print(f"[OK] Time: {end_time - start_time:.2f}s")
@@ -96,7 +99,10 @@ class DemoTranslation:
                 print(f"\nText: '{text}'")
                 result = self.manager.translate(text, 'auto', 'vi')
                 if result:
-                    print(f"[OK] Detected -> Translated: '{result['text']}'")
+                    try:
+                        print(f"[OK] Detected -> Translated: '{result['text']}'")
+                    except UnicodeEncodeError:
+                        print(f"[OK] Detected -> Translated: {result['text'].encode('ascii', 'replace').decode('ascii')}")
                     print(f"[OK] Model: {result.get('model_used', 'unknown')}")
                 else:
                     print("[ERROR] Auto detection failed")
@@ -109,26 +115,29 @@ class DemoTranslation:
         available_models = self.manager.get_available_models()
         results = {}
         
-        for model_name in available_models:
-            print(f"\nTesting {model_name}:")
+        for model in available_models:
+            print(f"\nTesting {model}:")
             start_time = time.time()
             
             try:
-                result = self.manager.translate_with_model(text, source_lang, target_lang, model_name)
+                result = self.manager.translate_with_model(text, source_lang, target_lang, model)
                 end_time = time.time()
                 
                 if result:
-                    print(f"[OK] Result: '{result['text']}'")
+                    try:
+                        print(f"[OK] Result: '{result['text']}'")
+                    except UnicodeEncodeError:
+                        print(f"[OK] Result: {result['text'].encode('ascii', 'replace').decode('ascii')}")
                     print(f"[OK] Confidence: {result.get('confidence', 0):.2f}")
                     print(f"[OK] Time: {end_time - start_time:.2f}s")
-                    results[model_name] = result
+                    results[model] = result
                 else:
                     print("[ERROR] Failed")
-                    results[model_name] = None
+                    results[model] = None
                     
             except Exception as e:
                 print(f"[ERROR] Error: {e}")
-                results[model_name] = None
+                results[model] = None
         
         return results
     
@@ -227,16 +236,16 @@ class DemoTranslation:
         available_models = self.manager.get_available_models()
         comparison = {}
         
-        for model_name in available_models:
-            print(f"\n--- {model_name.upper()} ---")
+        for model in available_models:
+            print(f"\n--- {model.upper()} ---")
             start_time = time.time()
             
             try:
-                result = self.manager.translate_with_model(test_text, source_lang, target_lang, model_name)
+                result = self.manager.translate_with_model(test_text, source_lang, target_lang, model)
                 end_time = time.time()
                 
                 if result:
-                    comparison[model_name] = {
+                    comparison[model] = {
                         'text': result['text'],
                         'confidence': result['confidence'],
                         'time': end_time - start_time,
@@ -246,11 +255,11 @@ class DemoTranslation:
                     print(f"[OK] Confidence: {result.get('confidence', 0):.2f}")
                     print(f"[OK] Time: {end_time - start_time:.2f}s")
                 else:
-                    comparison[model_name] = {'success': False}
+                    comparison[model] = {'success': False}
                     print("[ERROR] Failed")
                     
             except Exception as e:
-                comparison[model_name] = {'success': False, 'error': str(e)}
+                comparison[model] = {'success': False, 'error': str(e)}
                 print(f"[ERROR] Error: {e}")
         
         return comparison
@@ -282,22 +291,46 @@ class DemoTranslation:
         
         # 8. Summary
         self.print_summary(comparison)
-    
+
+    def run_quick_demo(self):
+        """Chạy demo dịch nhanh với 5 cặp ngôn ngữ"""
+        print("\n--- Quick Translation Demo ---")
+        
+        test_text = "Hello, how are you today?"
+        language_pairs = [
+            ('en', 'vi'), ('vi', 'en'),
+            ('zh', 'en'), ('ja', 'en'), ('fr', 'en')
+        ]
+        
+        for source_lang, target_lang in language_pairs:
+            print(f"\nTranslating '{test_text}' from {source_lang} to {target_lang}:")
+            available_models = self.manager.get_available_models()
+            
+            for model_name in available_models:
+                try:
+                    result = self.manager.translate_with_model(test_text, source_lang, target_lang, model_name)
+                    if result and result['text']:
+                        print(f"  {model_name}: '{result['text']}'")
+                    else:
+                        print(f"  {model_name}: [ERROR] Failed to translate")
+                except Exception as e:
+                    print(f"  {model_name}: [ERROR] {e}")
+
     def print_summary(self, comparison: Dict):
         """In tóm tắt kết quả"""
         print(f"\n=== SUMMARY ===")
         
         print(f"\nAvailable Models: {len(self.manager.get_available_models())}")
-        for model_name in self.manager.get_available_models():
-            model_info = self.manager.get_model_info(model_name)
-            print(f"  - {model_name}: {model_info.get('provider', 'Unknown')} ({'Online' if not model_info.get('offline', True) else 'Offline'})")
+        for model in self.manager.get_available_models():
+            model_info = self.manager.get_model_info(model)
+            print(f"  - {model}: {model_info.get('provider', 'Unknown')} ({'Online' if not model_info.get('offline', True) else 'Offline'})")
         
         print(f"\nModel Performance Comparison:")
-        for model_name, result in comparison.items():
+        for model, result in comparison.items():
             if result.get('success'):
-                print(f"  - {model_name}: [OK] {result.get('confidence', 0):.2f} confidence, {result.get('time', 0):.2f}s")
+                print(f"  - {model}: [OK] {result.get('confidence', 0):.2f} confidence, {result.get('time', 0):.2f}s")
             else:
-                print(f"  - {model_name}: [ERROR] Failed")
+                print(f"  - {model}: [ERROR] Failed")
         
         print(f"\nRecommendations:")
         if 'gemini' in comparison and comparison['gemini'].get('success'):
@@ -306,8 +339,6 @@ class DemoTranslation:
             print("  - Use NLLB-200 for offline translation")
         if 'opus' in comparison and comparison['opus'].get('success'):
             print("  - Use OPUS-MT for lightweight translation")
-        if 'm2m' in comparison and comparison['m2m'].get('success'):
-            print("  - Use M2M-100 for direct translation")
 
 
 def main():
@@ -341,8 +372,9 @@ def main():
         print("6. Language pairs test")
         print("7. Error handling test")
         print("8. Model comparison")
+        print("9. Quick translation demo")
         
-        choice = input("\nEnter choice (1-8): ").strip()
+        choice = input("\nEnter choice (1-9): ").strip()
         
         if choice == '1':
             demo.run_full_demo()
@@ -366,6 +398,8 @@ def main():
             demo.test_error_handling()
         elif choice == '8':
             demo.get_model_comparison()
+        elif choice == '9':
+            demo.run_quick_demo()
         else:
             print("Invalid choice. Running full demo...")
             demo.run_full_demo()
