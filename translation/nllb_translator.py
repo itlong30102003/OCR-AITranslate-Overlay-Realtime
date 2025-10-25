@@ -19,17 +19,21 @@ class NLLBTranslator(BaseTranslator):
         self.model_path = f"facebook/nllb-200-distilled-{model_size}"
         
         try:
+            # Force GPU usage if available, otherwise fail
+            if not torch.cuda.is_available():
+                raise RuntimeError("GPU not available. NLLB-200 requires GPU for optimal performance.")
+
             # Load tokenizer and model
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
             self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_path)
-            
-            # Set device
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+            # Force GPU device
+            self.device = torch.device("cuda")
             self.model.to(self.device)
-            
+
             self.is_available = True
             print(f"NLLB-200 loaded successfully on {self.device}")
-            
+
         except Exception as e:
             print(f"Failed to initialize NLLB-200: {e}")
             self.is_available = False
@@ -49,14 +53,30 @@ class NLLBTranslator(BaseTranslator):
         if not self.is_available:
             return None
         
-        # Language mapping for NLLB-200
+        # Language mapping for NLLB-200 - Core 5 languages for OCR
+        # Updated with correct NLLB-200 language codes
         lang_map = {
-            'en': 'eng_Latn', 'ja': 'jpn_Jpan', 
-            'zh': 'zho_Hans', 'vi': 'vie_Latn', 'fr': 'fra_Latn'
+            'en': 'eng_Latn',
+            'ja': 'jpn_Jpan',  # Supports Hiragana, Katakana, Kanji
+            'zh': 'zho_Hans',  # Supports Traditional and Simplified Chinese
+            'vi': 'vie_Latn',
+            'fr': 'fra_Latn'
         }
-        
+
         src = lang_map.get(source_lang, source_lang)
         tgt = lang_map.get(target_lang, target_lang)
+
+        # Validate source and target using convert_tokens_to_ids (no lang_code_to_id)
+        try:
+            self.tokenizer.convert_tokens_to_ids(src)
+        except KeyError:
+            print(f"Warning: Source language '{src}' not supported, using 'eng_Latn'")
+            src = 'eng_Latn'
+        try:
+            self.tokenizer.convert_tokens_to_ids(tgt)
+        except KeyError:
+            print(f"Warning: Target language '{tgt}' not supported, using 'eng_Latn'")
+            tgt = 'eng_Latn'
             
         try:
             # Set source language for tokenizer
@@ -69,7 +89,7 @@ class NLLBTranslator(BaseTranslator):
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    forced_bos_token_id=self.tokenizer.convert_tokens_to_ids(f"__{tgt}__"),
+                    forced_bos_token_id=self.tokenizer.convert_tokens_to_ids(tgt),
                     max_length=512,
                     num_beams=4,
                     early_stopping=True

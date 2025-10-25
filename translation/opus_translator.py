@@ -11,13 +11,49 @@ from .base_translator import BaseTranslator
 
 class OpusTranslator(BaseTranslator):
     """Helsinki-NLP OPUS-MT translator - Lightweight for specific pairs"""
-    
-    def __init__(self):
+
+    def __init__(self, layered_loading: bool = False):
         super().__init__("opus-mt")
-        
+
         self.loaded_models = {}  # Cache for loaded models
+        self.layered_loading = layered_loading
         self.is_available = True
-    
+
+        if layered_loading:
+            self._setup_layered_loading()
+
+    def _setup_layered_loading(self):
+        """Setup layered loading strategy for OPUS models"""
+        # Layer 1: Preload at startup (most common pairs)
+        self.layer1_pairs = [
+            ('en', 'vi'), ('vi', 'en'),
+            ('en', 'zh'), ('zh', 'en'),
+            ('en', 'ja'), ('ja', 'en'),
+            ('en', 'fr'), ('fr', 'en')
+        ]
+
+        # Layer 2: Lazy load (less common but still frequent)
+        self.layer2_pairs = []
+
+        # Layer 3: Pivot fallback (rare pairs via English bridge)
+        self.layer3_pairs = [
+            ('vi', 'zh'), ('zh', 'vi'), ('vi', 'fr'), ('fr', 'vi'),
+            ('vi', 'ja'), ('ja', 'vi'), ('fr', 'zh'), ('zh', 'fr'),
+            ('fr', 'ja'), ('ja', 'fr')
+        ]
+
+        print("OPUS layered loading configured")
+
+    def preload_model(self, source_lang: str, target_lang: str):
+        """Preload a specific model (for Layer 1)"""
+        if not self.layered_loading:
+            return
+
+        pair = (source_lang, target_lang)
+        if pair in self.layer1_pairs:
+            print(f"Preloading OPUS model for {source_lang}-{target_lang}")
+            self._load_model(source_lang, target_lang)
+
     def _get_model_name(self, source_lang: str, target_lang: str) -> str:
         """Get OPUS-MT model name for language pair"""
         return f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
