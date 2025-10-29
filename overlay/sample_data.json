@@ -1,0 +1,12 @@
+[
+    { "text": "Xin chào", "bbox": [100, 200, 120, 40] },
+    { "text": "Hello world", "bbox": [500, 300, 160, 40] },
+    { "text": "Dịch xong", "bbox": [300, 400, 140, 40] },
+    { "text": "Tốc độ xử lý: 32ms", "bbox": [200, 500, 240, 40] },
+    { "text": "Đang dịch...", "bbox": [600, 150, 180, 40] },
+    { "text": "Kết quả OCR chính xác", "bbox": [800, 450, 260, 40] },
+    { "text": "Realtime overlay demo", "bbox": [100, 600, 300, 40] },
+    { "text": "Ngôn ngữ: Tiếng Việt → English", "bbox": [400, 700, 360, 40] },
+    { "text": "Trạng thái: OK ✅", "bbox": [900, 200, 220, 40] },
+    { "text": "Phiên bản GPU: RTX 3050", "bbox": [1200, 500, 280, 40] }
+]
