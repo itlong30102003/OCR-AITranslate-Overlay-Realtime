@@ -21,7 +21,9 @@ class OCRTranslationApp:
         self._last_text_by_region: Dict[int, str] = {}
         self._last_translated_by_region: Dict[int, str] = {}
         self._scan_last_time: Dict[int, int] = {}
-        self._debounce_scans = 2  # yêu cầu ổn định 2 scan trước khi dịch
+        self._debounce_scans = 0  # yêu cầu ổn định 0 scan trước khi dịch
+        self._min_interval = 0.3  # thời gian tối thiểu giữa các lần dịch (giây)
+        self._last_translate_time: Dict[int, float] = {}
         self.overlay_windows = {}  # Lưu các cửa sổ overlay cho mỗi region
         
         # Cài đặt mặc định
@@ -68,18 +70,7 @@ class OCRTranslationApp:
             if not combined_text:
                 return
             
-            # Debounce: chỉ dịch khi text ổn định qua vài scan
-            last_txt = self._last_text_by_region.get(idx)
-            if last_txt != combined_text:
-                self._last_text_by_region[idx] = combined_text
-                self._scan_last_time[idx] = scan_counter
-                return
-            else:
-                last_scan = self._scan_last_time.get(idx, -999999)
-                if scan_counter - last_scan < self._debounce_scans:
-                    return
-
-            # Dịch thuật nếu có translation manager
+            # Dịch ngay sau khi có kết quả OCR
             if self.translation_manager:
                 self._translate_text(idx, combined_text, scan_counter)
             
