@@ -360,7 +360,7 @@ class ScreenCapture:
 		self._viewer = RegionViewer(self.root, regions)
 		self._monitor = MultiRegionMonitor(
 			regions,
-			fps=8,
+			fps=15,
 			on_region_change=lambda idx, img, scan: self._handle_region_change(idx, img, scan),
 			on_scan=lambda scan: self._viewer.update_scan_counter(scan),
 			logical_screen_size=self._get_logical_screen_size(),
