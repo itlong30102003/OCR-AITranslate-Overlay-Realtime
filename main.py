@@ -2,11 +2,13 @@ from typing import Tuple, Dict, Optional
 from PIL import Image
 import tkinter as tk
 from tkinter import ttk, messagebox
+import sys
 
 from capture.screen_capture import ScreenCapture
 from ocr.ocr import run_ocr_on_image
 from translation import TranslationManager
 from translation.config import TranslationConfig
+from overlay.tkinter_overlay import get_overlay
 
 
 class OCRTranslationApp:
@@ -24,14 +26,18 @@ class OCRTranslationApp:
         self._debounce_scans = 0  # yêu cầu ổn định 0 scan trước khi dịch
         self._min_interval = 0.3  # thời gian tối thiểu giữa các lần dịch (giây)
         self._last_translate_time: Dict[int, float] = {}
-        self.overlay_windows = {}  # Lưu các cửa sổ overlay cho mỗi region
-        
+
         # Cài đặt mặc định
         self.source_lang = 'auto'
         self.target_lang = self.config.get('default_target_lang', 'vi')
         self.preferred_model = None  # 'gemini' | 'nllb' | 'm2m' | 'opus' | None
-        self.show_overlay = False  # Hiển thị overlay kết quả (tắt mặc định)
-        
+        self.show_overlay = True  # Enable Tkinter overlay
+
+        # Initialize Tkinter overlay (thread-safe)
+        self.overlay = get_overlay()
+
+        print("[INFO] OCR Translation App with Tkinter Overlay")
+
         self._initialize_translation()
     
     def _initialize_translation(self):
@@ -110,79 +116,66 @@ class OCRTranslationApp:
                     'confidence': confidence,
                     'scan': scan_counter
                 }
-                
-                # Hiển thị overlay nếu được bật
+
+                # Update overlay with new results
                 if self.show_overlay:
-                    self._show_translation_overlay(region_idx, translated_text, model_used, confidence)
+                    try:
+                        self.overlay.update_translations(self.translation_results)
+                        print(f"[OVERLAY] Updated with {len(self.translation_results)} translations")
+                    except Exception as e:
+                        print(f"[OVERLAY] Error updating: {e}")
             else:
                 print(f"[TRANSLATION] Failed to translate region {region_idx}")
                 
         except Exception as e:
             print(f"[TRANSLATION] Error translating region {region_idx}: {e}")
     
-    def _show_translation_overlay(self, region_idx: int, translated_text: str, model: str, confidence: float):
-        """Hiển thị overlay kết quả translation"""
+    def _update_table_overlay(self):
+        """Cập nhật bảng overlay với tất cả kết quả dịch (DEPRECATED - use _schedule_overlay_update)"""
         try:
-            # Đóng overlay cũ nếu có
-            if region_idx in self.overlay_windows:
-                try:
-                    self.overlay_windows[region_idx].destroy()
-                except:
-                    pass
-                del self.overlay_windows[region_idx]
-            
-            # Tạo overlay mới
-            overlay = tk.Toplevel()
-            overlay.attributes('-topmost', True)
-            overlay.attributes('-alpha', 0.9)
-            overlay.overrideredirect(True)  # Loại bỏ thanh tiêu đề
-            
-            # Đặt vị trí overlay (có thể cải thiện để đặt gần vùng được chọn)
-            overlay.geometry("300x150+100+100")
-            
-            # Tạo frame chính
-            main_frame = tk.Frame(overlay, bg='#2E2E2E', relief='raised', bd=2)
-            main_frame.pack(fill='both', expand=True)
-            
-            # Tiêu đề
-            title_label = tk.Label(main_frame, text=f"Region {region_idx} Translation", 
-                                 bg='#2E2E2E', fg='white', font=('Arial', 10, 'bold'))
-            title_label.pack(pady=5)
-            
-            # Text đã dịch
-            text_label = tk.Label(main_frame, text=translated_text, 
-                                bg='#2E2E2E', fg='#4CAF50', font=('Arial', 12),
-                                wraplength=280, justify='left')
-            text_label.pack(pady=5, padx=10)
-            
-            # Thông tin model và confidence
-            info_label = tk.Label(main_frame, text=f"{model} ({confidence:.2f})", 
-                                bg='#2E2E2E', fg='#FFC107', font=('Arial', 8))
-            info_label.pack(pady=2)
-            
-            # Nút đóng
-            close_btn = tk.Button(main_frame, text="×", command=lambda: self._close_overlay(region_idx),
-                                bg='#f44336', fg='white', font=('Arial', 10, 'bold'),
-                                width=3, height=1)
-            close_btn.pack(side='right', padx=5, pady=5)
-            
-            # Lưu overlay
-            self.overlay_windows[region_idx] = overlay
-            
-            # Tự động đóng sau 5 giây
-            overlay.after(5000, lambda: self._close_overlay(region_idx))
-            
+            if not self.overlay_manager or not self.overlay_manager.overlay:
+                return
+
+            # Lấy overlay table widget
+            table = self.overlay_manager.overlay.table
+
+            # Clear existing rows
+            table.setRowCount(0)
+
+            # Add all translation results to table
+            from PyQt6.QtWidgets import QTableWidgetItem
+            from PyQt6.QtGui import QColor
+
+            row = 0
+            for region_idx in sorted(self.translation_results.keys()):
+                result = self.translation_results[region_idx]
+
+                table.insertRow(row)
+
+                # Original text
+                original_item = QTableWidgetItem(result['original'])
+                original_item.setForeground(QColor("#FFFFFF"))
+                table.setItem(row, 0, original_item)
+
+                # Translated text with model info
+                translated_with_info = f"{result['translated']}\n[{result['model']} - {result['confidence']:.2f}]"
+                translated_item = QTableWidgetItem(translated_with_info)
+                translated_item.setForeground(QColor("#4CAF50"))
+                table.setItem(row, 1, translated_item)
+
+                row += 1
+
+            # Resize columns
+            table.resizeColumnsToContents()
+            table.setColumnWidth(0, 200)
+            table.setColumnWidth(1, 250)
+
+            # Show overlay if hidden
+            if not self.overlay_manager.visible:
+                self.overlay_manager.show_overlay()
+
         except Exception as e:
-            print(f"[OVERLAY] Error showing overlay for region {region_idx}: {e}")
-    
-    def _close_overlay(self, region_idx: int):
-        """Đóng overlay cho region"""
-        if region_idx in self.overlay_windows:
-            try:
-                self.overlay_windows[region_idx].destroy()
-            except:
-                pass
-            del self.overlay_windows[region_idx]
+            print(f"[OVERLAY] Error updating table overlay: {e}")
     
     def _update_translation_ui(self, region_idx: int):
         """Cập nhật UI hiển thị kết quả translation"""
@@ -249,50 +242,21 @@ class OCRTranslationApp:
         tk.Button(settings_window, text="Save", command=save_settings).pack(pady=10)
     
     def show_translation_results(self):
-        """Hiển thị cửa sổ kết quả translation"""
+        """Hiển thị overlay với kết quả translation"""
         if not self.translation_results:
             messagebox.showinfo("No Results", "No translation results yet")
             return
-        
-        results_window = tk.Toplevel()
-        results_window.title("Translation Results")
-        results_window.geometry("800x600")
-        
-        # Create notebook for tabs
-        notebook = ttk.Notebook(results_window)
-        notebook.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        for region_idx, result in self.translation_results.items():
-            # Create tab for each region
-            frame = ttk.Frame(notebook)
-            notebook.add(frame, text=f"Region {region_idx}")
-            
-            # Original text
-            tk.Label(frame, text="Original Text:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=5)
-            original_text = tk.Text(frame, height=3, width=80)
-            original_text.pack(fill='x', padx=10, pady=5)
-            original_text.insert('1.0', result['original'])
-            original_text.config(state='disabled')
-            
-            # Translated text
-            tk.Label(frame, text="Translated Text:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=5)
-            translated_text = tk.Text(frame, height=3, width=80)
-            translated_text.pack(fill='x', padx=10, pady=5)
-            translated_text.insert('1.0', result['translated'])
-            translated_text.config(state='disabled')
-            
-            # Info
-            info_frame = tk.Frame(frame)
-            info_frame.pack(fill='x', padx=10, pady=5)
-            
-            tk.Label(info_frame, text=f"Model: {result['model']}").pack(side='left')
-            tk.Label(info_frame, text=f"Confidence: {result['confidence']:.2f}").pack(side='left', padx=20)
-            tk.Label(info_frame, text=f"Scan: {result['scan']}").pack(side='right')
+
+        # Show the overlay window
+        self.overlay.show()
+
+        # Update with current results
+        self.overlay.update_translations(self.translation_results)
     
     def show_main_menu(self):
         """Hiển thị menu chính"""
         menu_window = tk.Tk()
-        menu_window.title("OCR Translation Overlay")
+        menu_window.title("OCR Translation App")
         menu_window.geometry("500x400")
         menu_window.resizable(False, False)
         
@@ -398,11 +362,12 @@ class OCRTranslationApp:
         """Bắt đầu chụp màn hình và theo dõi"""
         if not self.translation_manager:
             print("[WARNING] Translation system not available, running OCR only")
-        
+
         self.screen_capture = ScreenCapture(
-            on_capture=None, 
+            on_capture=None,
             on_region_change=self.on_region_change
         )
+
         self.screen_capture.start_capture()
     
     def run(self):
