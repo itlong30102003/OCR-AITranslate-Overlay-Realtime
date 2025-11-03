@@ -1,5 +1,6 @@
 """Translation Service - Handles translation operations"""
 
+import asyncio
 from typing import Optional, Dict, List
 from translation import TranslationManager
 from translation.config import TranslationConfig
@@ -75,10 +76,15 @@ class TranslationService:
                 model_used = result.get('model_used', 'unknown')
                 confidence = result.get('confidence', 0)
 
-                print(f"[Translation Service] Region {region_idx}:")
-                print(f"  Original: {text}")
-                print(f"  Translated: {translated_text}")
-                print(f"  Model: {model_used}, Confidence: {confidence:.2f}")
+                try:
+                    print(f"[Translation Service] Region {region_idx}:")
+                    print(f"  Original: {text}")
+                    print(f"  Translated: {translated_text}")
+                    print(f"  Model: {model_used}, Confidence: {confidence:.2f}")
+                except UnicodeEncodeError:
+                    # Fallback for console encoding issues
+                    print(f"[Translation Service] Region {region_idx}: Translation completed")
+                    print(f"  Model: {model_used}, Confidence: {confidence:.2f}")
 
                 return {
                     'original': text,
@@ -137,3 +143,18 @@ class TranslationService:
             'preferred_model': self.preferred_model,
             'available': self.is_available()
         }
+
+    async def translate_async(self, text: str, region_idx: int, scan_counter: int) -> Optional[Dict]:
+        """
+        Async version - Translate text without blocking
+
+        Args:
+            text: Text to translate
+            region_idx: Region index for logging
+            scan_counter: Scan counter for logging
+
+        Returns:
+            Dictionary with translation result or None
+        """
+        # Run translation in thread pool to avoid blocking event loop
+        return await asyncio.to_thread(self.translate, text, region_idx, scan_counter)

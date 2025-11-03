@@ -4,7 +4,6 @@ Thread-safe and lightweight
 """
 
 import tkinter as tk
-from tkinter import ttk
 from typing import Dict
 
 
@@ -14,12 +13,14 @@ class TranslationOverlay:
     def __init__(self):
         self.window = None
         self.text_widgets = {}  # region_idx -> Text widget
+        self.text_labels = []  # Store label references for resize updates
         self.is_visible = False
         self._resize_edge = None  # Track which edge is being resized
         self._resize_start_x = 0
         self._resize_start_y = 0
         self._resize_start_width = 0
         self._resize_start_height = 0
+        self._last_width = 0  # Track last width for resize detection
 
     def create_window(self):
         """Create the overlay window"""
@@ -29,7 +30,12 @@ class TranslationOverlay:
         self.window = tk.Toplevel()
         self.window.overrideredirect(True)  # Remove title bar/borders
         self.window.attributes('-topmost', True)
-        self.window.attributes('-alpha', 0.9)
+        self.window.attributes('-alpha', 0.85)  # More transparent
+        # Try to enable transparency for top padding
+        try:
+            self.window.wm_attributes('-transparentcolor', '#000001')
+        except:
+            pass
 
         # Position at bottom-right
         screen_width = self.window.winfo_screenwidth()
@@ -46,26 +52,16 @@ class TranslationOverlay:
         self.window.bind('<Motion>', self._on_mouse_move)
         self.window.bind('<ButtonRelease-1>', self._on_mouse_release)
 
-        # Header
-        header = tk.Frame(self.window, bg='#2E2E2E', height=40)
-        header.pack(fill='x')
+        # Handle window resize to update text wrapping
+        self.window.bind('<Configure>', self._on_window_configure)
 
-        title = tk.Label(header, text="Translation Results",
-                        bg='#2E2E2E', fg='white',
-                        font=('Arial', 12, 'bold'))
-        title.pack(side='left', padx=10, pady=5)
+        # Top padding for close button (transparent area)
+        top_padding = tk.Frame(self.window, bg='#000001', height=35)
+        top_padding.pack(fill='x')
 
-        close_btn = tk.Button(header, text="×",
-                             command=self.hide,
-                             bg='#f44336', fg='white',
-                             font=('Arial', 14, 'bold'),
-                             width=3, relief='flat')
-        close_btn.pack(side='right', padx=5, pady=5)
-
-        # Scrollable content
-        canvas = tk.Canvas(self.window, bg='#1E1E1E', highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
-        self.content_frame = tk.Frame(canvas, bg='#1E1E1E')
+        # Scrollable content with lighter background
+        canvas = tk.Canvas(self.window, bg='#3A3A3A', highlightthickness=0)
+        self.content_frame = tk.Frame(canvas, bg='#3A3A3A')
 
         self.content_frame.bind(
             "<Configure>",
@@ -73,10 +69,39 @@ class TranslationOverlay:
         )
 
         canvas.create_window((0, 0), window=self.content_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
 
+        # Pack without scrollbar
         canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+
+        # Floating close button - transparent by default, white on hover with scale effect
+        btn_canvas = tk.Canvas(self.window, width=30, height=30,
+                              bg='#000001', highlightthickness=0)
+
+        # Draw transparent circle with red border (small by default)
+        circle = btn_canvas.create_oval(4, 4, 26, 26,
+                                       fill='#000001', outline='#e74c3c', width=3)
+
+        # Draw red X text
+        x_text = btn_canvas.create_text(15, 15, text="×",
+                              fill='#e74c3c',
+                              font=('Arial', 14, 'bold'))
+
+        # Make it clickable with hover effect (scale up on hover)
+        btn_canvas.bind('<Button-1>', lambda e: self.hide())
+        btn_canvas.bind('<Enter>', lambda e: (
+            btn_canvas.coords(circle, 2, 2, 28, 28),  # Scale up
+            btn_canvas.itemconfig(circle, fill='000001'),  # White on hover
+            btn_canvas.itemconfig(x_text, fill='#c0392b')
+        ))
+        btn_canvas.bind('<Leave>', lambda e: (
+            btn_canvas.coords(circle, 4, 4, 26, 26),  # Scale down
+            btn_canvas.itemconfig(circle, fill='#000001'),  # Transparent when not hovering
+            btn_canvas.itemconfig(x_text, fill='#e74c3c')
+        ))
+        btn_canvas.config(cursor='hand2')
+
+        # Place button in top padding area, at top-right
+        btn_canvas.place(relx=1.0, rely=0.0, anchor='ne', x=-5, y=3)
 
         self.is_visible = True
 
@@ -173,43 +198,87 @@ class TranslationOverlay:
         """Handle mouse release"""
         self._resize_edge = None
 
+    def _on_window_configure(self, event):
+        """Handle window resize to update text wrapping"""
+        if not self.window:
+            return
+
+        # Only update if width actually changed (avoid excessive updates)
+        current_width = self.window.winfo_width()
+        if abs(current_width - self._last_width) > 10:  # 10px threshold
+            self._last_width = current_width
+            self._update_text_wrapping()
+
+    def _update_text_wrapping(self):
+        """Update text wrapping for all labels based on current window width"""
+        if not self.window:
+            return
+
+        # Get current window width
+        window_width = self.window.winfo_width()
+        if window_width <= 1:
+            return
+
+        # Calculate new wraplength
+        new_wraplength = max(200, window_width - 40)  # 40px for padding
+
+        # Update all stored labels
+        for label in self.text_labels:
+            try:
+                label.config(wraplength=new_wraplength)
+            except:
+                pass  # Label might have been destroyed
+
     def update_translations(self, translation_results: Dict[int, dict]):
         """
         Update overlay with translation results
         Args:
             translation_results: Dict[region_idx, {original, translated, model, confidence}]
         """
+        # Ensure window exists before updating
         if self.window is None:
-            self.create_window()
+            try:
+                self.create_window()
+            except Exception as e:
+                print(f"[Overlay] Error creating window: {e}")
+                return
 
         # Clear old widgets
         for widget in self.content_frame.winfo_children():
             widget.destroy()
         self.text_widgets.clear()
+        self.text_labels.clear()
 
         # Add translation results
         for region_idx in sorted(translation_results.keys()):
             result = translation_results[region_idx]
 
-            # Create frame for this region
+            # Create frame for this region with 10px padding on all sides
             frame = tk.Frame(self.content_frame, bg='#2E2E2E', relief='raised', bd=1)
-            frame.pack(fill='x', padx=5, pady=5)
+            frame.pack(fill='both', expand=True, padx=10, pady=5)
 
             # Display: Region X: Translation
             text = f"Region {region_idx}: {result['translated']}"
 
+            # Calculate wraplength based on window width
+            window_width = self.window.winfo_width() if self.window.winfo_width() > 1 else 500
+            wraplength = max(200, window_width - 40)  # 40px for padding
+
             label = tk.Label(frame, text=text,
-                           bg='#2E2E2E', fg='#4CAF50',
-                           font=('Arial', 11),
-                           wraplength=450, justify='left',
+                           bg='#2E2E2E', fg='white',
+                           font=('Arial', 9),
+                           wraplength=wraplength, justify='left',
                            anchor='w')
             label.pack(fill='x', padx=10, pady=5)
+
+            # Store label reference for resize updates
+            self.text_labels.append(label)
 
             # Model info
             info = tk.Label(frame,
                           text=f"[{result['model']} - {result['confidence']:.2f}]",
-                          bg='#2E2E2E', fg='#FFC107',
-                          font=('Arial', 8))
+                          bg='#2E2E2E', fg='#888888',
+                          font=('Arial', 6))
             info.pack(anchor='w', padx=10, pady=(0, 5))
 
         # Show window if hidden

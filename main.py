@@ -3,7 +3,7 @@ from PIL import Image
 
 from capture.screen_capture import ScreenCapture
 from translation.config import TranslationConfig
-from services import OCRService, TranslationService, OverlayService, UIService
+from services import OCRService, TranslationService, OverlayService, UIService, AsyncProcessingService
 
 
 class OCRTranslationApp:
@@ -19,37 +19,31 @@ class OCRTranslationApp:
         self.overlay_service = OverlayService(enabled=True)
         self.ui_service = UIService()
 
+        # Initialize async processing service
+        self.async_service = AsyncProcessingService(
+            self.ocr_service,
+            self.translation_service,
+            self.overlay_service
+        )
+
         # Screen capture (will be initialized when monitoring starts)
         self.screen_capture = None
 
         print("[INFO] OCR Translation App initialized with services")
         print(f"[INFO] Translation available: {self.translation_service.is_available()}")
+        print("[INFO] Async processing enabled for better performance")
 
     def on_region_change(self, idx: int, img: Image.Image, scan_counter: int):
         """
-        Callback khi có thay đổi trong vùng - OCR + Translation
+        Callback khi có thay đổi trong vùng - OCR + Translation (Async)
 
         Args:
             idx: Region index
             img: PIL Image of the region
             scan_counter: Current scan counter
         """
-        try:
-            # Step 1: OCR processing
-            text = self.ocr_service.process_image(img, idx, scan_counter)
-            if not text:
-                return
-
-            # Step 2: Translation (if available)
-            if self.translation_service.is_available():
-                result = self.translation_service.translate(text, idx, scan_counter)
-
-                if result:
-                    # Step 3: Update overlay
-                    self.overlay_service.update_translation(idx, result)
-
-        except Exception as e:
-            print(f"[App] Error processing region {idx}: {e}")
+        # Process asynchronously - non-blocking, parallel execution
+        self.async_service.process_region_async(idx, img, scan_counter)
 
     def show_language_settings(self):
         """Hiển thị cửa sổ cài đặt ngôn ngữ"""
@@ -98,6 +92,10 @@ class OCRTranslationApp:
         """Bắt đầu chụp màn hình và theo dõi"""
         if not self.translation_service.is_available():
             print("[WARNING] Translation system not available, running OCR only")
+
+        # Start async processing service
+        print("[INFO] Starting async processing service...")
+        self.async_service.start()
 
         self.screen_capture = ScreenCapture(
             on_capture=None,

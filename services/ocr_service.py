@@ -1,5 +1,6 @@
 """OCR Service - Handles OCR processing logic"""
 
+import asyncio
 from typing import List, Dict, Tuple
 from PIL import Image
 from ocr.ocr import run_ocr_on_image
@@ -80,3 +81,18 @@ class OCRService:
         except Exception as e:
             print(f"[OCR Service] Error extracting text with boxes: {e}")
             return []
+
+    async def process_image_async(self, img: Image.Image, region_idx: int, scan_counter: int) -> str:
+        """
+        Async version - Process image and extract text using OCR in thread pool
+
+        Args:
+            img: PIL Image to process
+            region_idx: Region index for logging
+            scan_counter: Scan counter for logging
+
+        Returns:
+            Combined text from all detected lines
+        """
+        # Run CPU-bound OCR in thread pool to avoid blocking event loop
+        return await asyncio.to_thread(self.process_image, img, region_idx, scan_counter)
