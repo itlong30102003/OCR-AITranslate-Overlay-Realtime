@@ -90,7 +90,7 @@ class TranslationOverlay:
         btn_canvas.bind('<Button-1>', lambda e: self.hide())
         btn_canvas.bind('<Enter>', lambda e: (
             btn_canvas.coords(circle, 2, 2, 28, 28),  # Scale up
-            btn_canvas.itemconfig(circle, fill='000001'),  # White on hover
+            btn_canvas.itemconfig(circle, fill='#000001'),
             btn_canvas.itemconfig(x_text, fill='#c0392b')
         ))
         btn_canvas.bind('<Leave>', lambda e: (

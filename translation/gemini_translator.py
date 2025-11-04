@@ -36,10 +36,43 @@ class GeminiTranslator(BaseTranslator):
 
         try:
             self.model = genai.GenerativeModel('gemini-2.0-flash-lite')
-            self.is_available = True
+
+            # Quick health check to verify API is working
+            if self._verify_api_health():
+                self.is_available = True
+                print("[Gemini] API verified and ready")
+            else:
+                self.is_available = False
+                print("[Gemini] API verification failed, will use fallback models")
+
         except Exception as e:
-            print(f"Failed to initialize Gemini: {e}")
+            print(f"[Gemini] Failed to initialize: {e}")
             self.is_available = False
+
+    def _verify_api_health(self) -> bool:
+        """
+        Quick health check to verify Gemini API is working
+        Returns True if API is healthy, False otherwise
+        """
+        try:
+            # Simple test with short text
+            test_response = self.model.generate_content("Test")
+            if test_response and test_response.text:
+                return True
+            return False
+        except Exception as e:
+            error_str = str(e)
+            # Check for common errors
+            if '429' in error_str or 'Resource exhausted' in error_str:
+                print("[Gemini] Rate limit detected during verification. Will retry later.")
+                # Even if rate limited, the API key is valid
+                return True
+            elif 'API key' in error_str or 'invalid' in error_str.lower():
+                print(f"[Gemini] API key error: {e}")
+                return False
+            else:
+                print(f"[Gemini] Health check failed: {e}")
+                return False
     
     def translate(self, text: str, source_lang: str, target_lang: str) -> Optional[Dict]:
         """
@@ -105,9 +138,28 @@ class GeminiTranslator(BaseTranslator):
                 print(f"[Gemini] Translation failed: {e}")
                 return None
     
+    def is_model_available(self) -> bool:
+        """
+        Check if Gemini is currently available for translation
+        Returns False if in cooldown or not initialized
+        """
+        if not self.is_available:
+            return False
+
+        # Check if in cooldown
+        if time.time() < self.cooldown_until:
+            return False
+
+        return True
+
     def get_model_info(self) -> Dict:
         """Get Gemini model information"""
         info = super().get_model_info()
+
+        # Add cooldown status
+        in_cooldown = time.time() < self.cooldown_until
+        cooldown_remaining = max(0, int(self.cooldown_until - time.time())) if in_cooldown else 0
+
         info.update({
             'provider': 'Google',
             'cost': 'Free',
@@ -115,6 +167,8 @@ class GeminiTranslator(BaseTranslator):
             'offline': False,
             'quality': 'High',
             'speed': 'Very Fast',
-            'model': 'gemini-2.0-flash-lite'
+            'model': 'gemini-2.0-flash-lite',
+            'in_cooldown': in_cooldown,
+            'cooldown_remaining': cooldown_remaining
         })
         return info
