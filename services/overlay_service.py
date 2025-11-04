@@ -1,25 +1,35 @@
 """Overlay Service - Handles overlay display management"""
 
 import threading
-from typing import Dict
+from typing import Dict, List
 from overlay.tkinter_overlay import get_overlay
+from overlay.positioned_overlay_qt import get_positioned_overlay_qt
 
 
 class OverlayService:
     """Service for managing overlay display"""
 
-    def __init__(self, enabled: bool = True):
+    def __init__(self, enabled: bool = True, overlay_mode: str = "list"):
         """
         Initialize Overlay Service
 
         Args:
             enabled: Whether overlay is enabled by default
+            overlay_mode: Overlay mode - "list" (default) or "positioned"
         """
         self.enabled = enabled
+        self.overlay_mode = overlay_mode
+
+        # List overlay (original)
         self.overlay = get_overlay()
         self.translation_results: Dict[int, Dict] = {}
+
+        # Positioned overlay (new)
+        self.positioned_overlay = None  # Lazy initialization
+        self.positioned_text_boxes: Dict[int, List] = {}  # Store text boxes by region
+
         self._lock = threading.Lock()  # Thread-safe lock for async updates
-        print(f"[Overlay Service] Initialized (enabled: {enabled})")
+        print(f"[Overlay Service] Initialized (enabled: {enabled}, mode: {overlay_mode})")
 
     def update_translation(self, region_idx: int, result: Dict):
         """
@@ -120,3 +130,94 @@ class OverlayService:
     def get_result_count(self) -> int:
         """Get number of stored results"""
         return len(self.translation_results)
+
+    def _get_positioned_overlay(self):
+        """Get or create positioned overlay instance (lazy initialization)"""
+        if self.positioned_overlay is None:
+            # Use PyQt6 overlay (singleton)
+            self.positioned_overlay = get_positioned_overlay_qt()
+        return self.positioned_overlay
+
+    def update_positioned_overlay(self, region_idx: int, translated_boxes: List):
+        """
+        Update positioned overlay with translated text boxes (Thread-safe)
+
+        Args:
+            region_idx: Region index
+            translated_boxes: List of TranslatedTextBox objects
+        """
+        if not self.enabled:
+            return
+
+        try:
+            # Thread-safe update
+            with self._lock:
+                # Store text boxes for this region
+                self.positioned_text_boxes[region_idx] = translated_boxes
+
+                # Flatten all text boxes from all regions
+                all_boxes = []
+                for boxes in self.positioned_text_boxes.values():
+                    all_boxes.extend(boxes)
+
+            # Get overlay instance
+            overlay = self._get_positioned_overlay()
+
+            # Update overlay (PyQt signals handle thread-safety)
+            overlay.update_text_boxes(all_boxes)
+            print(f"[Overlay Service] Updated positioned overlay - Region {region_idx}: {len(translated_boxes)} boxes, Total: {len(all_boxes)} boxes")
+
+        except Exception as e:
+            print(f"[Overlay Service] Error updating positioned overlay: {e}")
+
+    def show_positioned_overlay(self):
+        """Show the positioned overlay window"""
+        try:
+            overlay = self._get_positioned_overlay()
+            overlay.show()
+            print("[Overlay Service] Positioned overlay shown")
+        except Exception as e:
+            print(f"[Overlay Service] Error showing positioned overlay: {e}")
+
+    def hide_positioned_overlay(self):
+        """Hide the positioned overlay window"""
+        if self.positioned_overlay:
+            try:
+                self.positioned_overlay.hide()
+                print("[Overlay Service] Positioned overlay hidden")
+            except Exception as e:
+                print(f"[Overlay Service] Error hiding positioned overlay: {e}")
+
+    def clear_positioned_overlay(self):
+        """Clear positioned overlay"""
+        self.positioned_text_boxes.clear()
+        if self.positioned_overlay:
+            try:
+                self.positioned_overlay.clear()
+                print("[Overlay Service] Positioned overlay cleared")
+            except Exception as e:
+                print(f"[Overlay Service] Error clearing positioned overlay: {e}")
+
+    def set_overlay_mode(self, mode: str):
+        """
+        Set overlay mode and switch between overlays
+
+        Args:
+            mode: "list" or "positioned"
+        """
+        if mode not in ["list", "positioned"]:
+            print(f"[Overlay Service] Invalid mode: {mode}")
+            return
+
+        self.overlay_mode = mode
+        print(f"[Overlay Service] Overlay mode set to: {mode}")
+
+        # Hide the overlay we're switching away from
+        if mode == "positioned":
+            self.hide_overlay()
+        else:
+            self.hide_positioned_overlay()
+
+    def get_overlay_mode(self) -> str:
+        """Get current overlay mode"""
+        return self.overlay_mode

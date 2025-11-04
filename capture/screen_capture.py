@@ -154,13 +154,14 @@ class RegionWatcher:
 
 
 class MultiRegionMonitor:
-	def __init__(self, regions: List[Tuple[int, int, int, int]], fps: int = 8, on_region_change: Optional[Callable[[int, Image.Image, int], None]] = None, on_scan: Optional[Callable[[int], None]] = None, logical_screen_size: Optional[Tuple[int, int]] = None, sensitivity: float = 0.7):
+	def __init__(self, regions: List[Tuple[int, int, int, int]], fps: int = 8, on_region_change: Optional[Callable[[int, Image.Image, int], None]] = None, on_scan: Optional[Callable[[int], None]] = None, logical_screen_size: Optional[Tuple[int, int]] = None, sensitivity: float = 0.7, scan_mode: str = "realtime"):
 		"""Monitor multiple regions by grabbing full screen and cropping per frame.
 
 		- on_region_change: callback(idx, cropped_image, scan_counter) when changed.
 		- on_scan: callback(scan_counter) after each frame.
 		- logical_screen_size: Tk logical size to compensate DPI scaling.
 		- sensitivity: forwarded to RegionWatcher.
+		- scan_mode: "realtime" (continuous scan) or "snapshot" (scan once then stop)
 		"""
 		self.regions = [Region(index=i, coords=r) for i, r in enumerate(regions)]
 		self.watchers = [RegionWatcher(region=r, sensitivity=sensitivity) for r in self.regions]
@@ -174,6 +175,8 @@ class MultiRegionMonitor:
 		self._scale_x = 1.0
 		self._scale_y = 1.0
 		self._thread: Optional[threading.Thread] = None
+		self.scan_mode = scan_mode  # "realtime" or "snapshot"
+		self._regions_scanned = set()  # Track which regions have been processed in snapshot mode
 
 	def start(self):
 		"""Start the monitoring loop on a background daemon thread."""
@@ -200,7 +203,9 @@ class MultiRegionMonitor:
 
 	def _run_loop(self):
 		"""Background loop: grab full screen, crop regions, detect changes, callback."""
-		print(f"[Monitor] Starting with {len(self.regions)} regions at {self.fps} fps")
+		mode_str = "snapshot mode (one-shot)" if self.scan_mode == "snapshot" else f"realtime mode at {self.fps} fps"
+		print(f"[Monitor] Starting with {len(self.regions)} regions in {mode_str}")
+
 		while not self._stop_event.is_set():
 			start_time = time.time()
 			try:
@@ -215,6 +220,9 @@ class MultiRegionMonitor:
 				if lw > 0 and lh > 0:
 					self._scale_x = fw / lw
 					self._scale_y = fh / lh
+					print(f"[Monitor] DPI Scaling: Physical ({fw}x{fh}) / Logical ({lw}x{lh}) = Scale ({self._scale_x:.2f}x, {self._scale_y:.2f}y)")
+
+			# Process all regions in this frame
 			for watcher in self.watchers:
 				x1, y1, x2, y2 = watcher.region.coords
 				sx1 = int(round(x1 * self._scale_x))
@@ -229,18 +237,43 @@ class MultiRegionMonitor:
 				if sx2 <= sx1 or sy2 <= sy1:
 					continue
 				crop = full.crop((sx1, sy1, sx2, sy2))
-				if watcher.has_changed(crop):
-					if self.on_region_change is not None:
-						try:
-							self.on_region_change(watcher.region.index, crop, self.scan_counter)
-						except Exception:
-							pass
+
+				# IMPORTANT: Use scaled (physical) coordinates for overlay, not logical!
+				physical_region_coords = (sx1, sy1, sx2, sy2)
+
+				# In snapshot mode, always trigger callback on first scan (ignore has_changed)
+				if self.scan_mode == "snapshot":
+					if watcher.region.index not in self._regions_scanned:
+						self._regions_scanned.add(watcher.region.index)
+						if self.on_region_change is not None:
+							try:
+								# Pass PHYSICAL region coords for positioned overlay support
+								self.on_region_change(watcher.region.index, crop, self.scan_counter, physical_region_coords)
+							except Exception:
+								pass
+				else:
+					# Realtime mode: only trigger on change
+					if watcher.has_changed(crop):
+						if self.on_region_change is not None:
+							try:
+								# Pass PHYSICAL region coords for positioned overlay support
+								self.on_region_change(watcher.region.index, crop, self.scan_counter, physical_region_coords)
+							except Exception:
+								pass
+
 			self.scan_counter += 1
 			if self.on_scan is not None:
 				try:
 					self.on_scan(self.scan_counter)
 				except Exception:
 					pass
+
+			# In snapshot mode, stop after first complete frame
+			if self.scan_mode == "snapshot" and len(self._regions_scanned) == len(self.regions):
+				print(f"[Monitor] Snapshot complete - all {len(self.regions)} region(s) processed. Stopping.")
+				self._stop_event.set()
+				break
+
 			elapsed = time.time() - start_time
 			to_sleep = self.frame_interval - elapsed
 			if to_sleep > 0:
@@ -251,19 +284,23 @@ class MultiRegionMonitor:
 
 
 class ScreenCapture:
-	def __init__(self, on_capture: Callable[[Tuple[int, int, int, int]], None] = None, on_region_change: Optional[Callable[[int, Image.Image, int], None]] = None):
-		"""UI flow to select multiple regions, then start real-time region monitoring.
+	def __init__(self, on_capture: Callable[[Tuple[int, int, int, int]], None] = None, on_region_change: Optional[Callable[[int, Image.Image, int], None]] = None, scan_mode: str = "realtime"):
+		"""UI flow to select multiple regions, then start region monitoring.
 
 		- on_capture: callback mỗi lần người dùng chọn xong một vùng.
 		- on_region_change: callback khi vùng thay đổi (idx, PIL.Image, scan_counter).
+		- scan_mode: "realtime" (continuous) or "snapshot" (one-shot)
 		"""
 		self.on_capture = on_capture
 		self.on_region_change = on_region_change
+		self.scan_mode = scan_mode
 		self.start_x = self.start_y = 0
 		self.canvas = None
 		self.rect_id = None
 		self.capture_window = None
 		self.captured_coords: List[Tuple[int, int, int, int]] = []
+		self._monitor: Optional[MultiRegionMonitor] = None
+		self._viewer: Optional['RegionViewer'] = None
 
 	def start_capture(self):
 		"""Start region selection flow (can repeat to select multiple regions)."""
@@ -357,21 +394,42 @@ class ScreenCapture:
 
 	def _open_viewer(self, regions: List[Tuple[int, int, int, int]]):
 		"""Create the viewer window and wire callbacks to the monitor."""
-		self._viewer = RegionViewer(self.root, regions)
+		self._viewer = RegionViewer(self.root, regions, scan_mode=self.scan_mode)
 		self._monitor = MultiRegionMonitor(
 			regions,
 			fps=15,
-			on_region_change=lambda idx, img, scan: self._handle_region_change(idx, img, scan),
+			on_region_change=lambda idx, img, scan, coords: self._handle_region_change(idx, img, scan, coords),
 			on_scan=lambda scan: self._viewer.update_scan_counter(scan),
 			logical_screen_size=self._get_logical_screen_size(),
 			sensitivity=0.6,
+			scan_mode=self.scan_mode,
 		)
 		# Ensure the monitor thread is stopped when viewer stops
 		self._viewer.set_stop_callback(lambda: self._monitor.stop(join=True))
+		# For snapshot mode, add restart callback
+		if self.scan_mode == "snapshot":
+			self._viewer.set_restart_callback(lambda: self._restart_selection())
 		self._monitor.start()
 		self._viewer.show()
 
-	def _handle_region_change(self, idx: int, img: Image.Image, scan: int):
+	def _restart_selection(self):
+		"""Restart region selection flow (for snapshot mode)"""
+		print("[ScreenCapture] Restarting region selection...")
+		# Stop current monitor
+		if self._monitor:
+			self._monitor.stop(join=True)
+		# Close current viewer
+		if self._viewer:
+			try:
+				self._viewer.win.destroy()
+			except Exception:
+				pass
+		# Reset captured coords
+		self.captured_coords.clear()
+		# Start new selection
+		self._capture_loop()
+
+	def _handle_region_change(self, idx: int, img: Image.Image, scan: int, coords: tuple):
 		"""Forward region image to viewer and external callback (if any)."""
 		try:
 			self._viewer.enqueue_update(idx, img)
@@ -379,7 +437,8 @@ class ScreenCapture:
 			pass
 		if self.on_region_change is not None:
 			try:
-				self.on_region_change(idx, img, scan)
+				# Pass region coords for positioned overlay support
+				self.on_region_change(idx, img, scan, coords)
 			except Exception:
 				pass
 
@@ -399,19 +458,21 @@ class ScreenCapture:
 
 
 class RegionViewer:
-	"""Tk viewer window that shows live thumbnails per region and a Stop button."""
+	"""Tk viewer window that shows live thumbnails per region and control buttons."""
 
-	def __init__(self, root: tk.Misc, regions: List[Tuple[int, int, int, int]]):
-		"""Build the viewer UI with a grid of thumbnails and a stop button."""
+	def __init__(self, root: tk.Misc, regions: List[Tuple[int, int, int, int]], scan_mode: str = "realtime"):
+		"""Build the viewer UI with a grid of thumbnails and control buttons."""
 		self.root = root
 		self.regions = regions
+		self.scan_mode = scan_mode
 		self.win = tk.Toplevel(self.root)
-		self.win.title("Region Monitor")
+		self.win.title("Region Monitor - Snapshot Mode" if scan_mode == "snapshot" else "Region Monitor - Realtime")
 		self.win.protocol("WM_DELETE_WINDOW", self._on_close)
 		self.frames: List[tk.Frame] = []
 		self.labels: List[tk.Label] = []
 		self.photo_images: List[Optional[ImageTk.PhotoImage]] = [None] * len(regions)
 		self.stop_callback: Optional[Callable[[], None]] = None
+		self.restart_callback: Optional[Callable[[], None]] = None
 		self._stopped = False
 		self.scan_var = tk.StringVar(value="Scans: 0")
 
@@ -420,8 +481,14 @@ class RegionViewer:
 		info_bar.pack(fill="x")
 		self.scan_label = tk.Label(info_bar, textvariable=self.scan_var)
 		self.scan_label.pack(side="left", padx=6, pady=4)
-		self.stop_btn = tk.Button(info_bar, text="Dừng theo dõi", command=self._on_stop)
-		self.stop_btn.pack(side="right", padx=6, pady=4)
+
+		# Buttons depend on mode
+		if scan_mode == "snapshot":
+			self.restart_btn = tk.Button(info_bar, text="Chọn vùng mới", command=self._on_restart, bg="#4CAF50", fg="white")
+			self.restart_btn.pack(side="right", padx=6, pady=4)
+		else:
+			self.stop_btn = tk.Button(info_bar, text="Dừng theo dõi", command=self._on_stop)
+			self.stop_btn.pack(side="right", padx=6, pady=4)
 
 		grid = tk.Frame(self.win)
 		grid.pack(fill="both", expand=True)
@@ -451,6 +518,10 @@ class RegionViewer:
 	def set_stop_callback(self, cb: Callable[[], None]):
 		"""Set the callback invoked when user clicks Stop or closes the window."""
 		self.stop_callback = cb
+
+	def set_restart_callback(self, cb: Callable[[], None]):
+		"""Set the callback invoked when user clicks 'Select New Region' (snapshot mode only)."""
+		self.restart_callback = cb
 
 	def enqueue_update(self, idx: int, image: Image.Image):
 		"""Queue an updated image for region 'idx' to be shown on the UI thread."""
@@ -502,6 +573,15 @@ class RegionViewer:
 			except Exception:
 				pass
 		self._on_close()
+
+	def _on_restart(self):
+		"""Handle 'Select New Region' click: trigger restart callback."""
+		self._stopped = True
+		if self.restart_callback:
+			try:
+				self.restart_callback()
+			except Exception:
+				pass
 
 	def _on_close(self):
 		"""Destroy the viewer and cancel any scheduled callbacks."""

@@ -20,7 +20,9 @@ class UIService:
         translation_available: bool,
         source_lang: str,
         target_lang: str,
-        available_models: list
+        available_models: list,
+        current_overlay_mode: str = "positioned",
+        on_overlay_mode_change: Optional[Callable] = None
     ):
         """
         Show main menu window
@@ -36,7 +38,7 @@ class UIService:
         """
         menu_window = tk.Tk()
         menu_window.title("OCR Translation App")
-        menu_window.geometry("500x400")
+        menu_window.geometry("550x550")
         menu_window.resizable(False, False)
 
         # Title
@@ -75,6 +77,47 @@ class UIService:
         if translation_available and available_models:
             models_text = f"Models: {', '.join(available_models)}"
             tk.Label(status_frame, text=models_text, font=('Arial', 9)).pack()
+
+        # Overlay mode selection
+        mode_frame = tk.LabelFrame(menu_window, text="Overlay Mode", font=('Arial', 10, 'bold'))
+        mode_frame.pack(pady=15, padx=20, fill='x')
+
+        overlay_mode_var = tk.StringVar(value=current_overlay_mode)
+
+        # Radio buttons for overlay modes
+        positioned_radio = tk.Radiobutton(
+            mode_frame,
+            text="Positioned Overlay (Text at bbox positions)",
+            variable=overlay_mode_var,
+            value="positioned",
+            font=('Arial', 9),
+            command=lambda: self._on_mode_change(overlay_mode_var.get(), on_overlay_mode_change)
+        )
+        positioned_radio.pack(anchor='w', padx=10, pady=5)
+
+        list_radio = tk.Radiobutton(
+            mode_frame,
+            text="List Overlay (Text in scrollable window)",
+            variable=overlay_mode_var,
+            value="list",
+            font=('Arial', 9),
+            command=lambda: self._on_mode_change(overlay_mode_var.get(), on_overlay_mode_change)
+        )
+        list_radio.pack(anchor='w', padx=10, pady=5)
+
+        # Mode description
+        if current_overlay_mode == "positioned":
+            mode_desc = "Subtitle-style translation overlay (Snapshot mode: scan once)"
+        else:
+            mode_desc = "Text will appear in a scrollable list window"
+
+        mode_desc_label = tk.Label(
+            mode_frame,
+            text=f"➤ {mode_desc}",
+            font=('Arial', 8, 'italic'),
+            fg='#666'
+        )
+        mode_desc_label.pack(anchor='w', padx=20, pady=5)
 
         # Buttons
         button_frame = tk.Frame(menu_window)
@@ -131,11 +174,13 @@ class UIService:
         ).pack(anchor='w')
 
         instructions = [
-            "1. Click 'Start Monitoring' to select screen regions",
-            "2. Drag to select areas you want to monitor",
-            "3. OCR will detect text changes automatically",
-            "4. Translation will be performed in real-time",
-            "5. View results in the 'Translation Results' window"
+            "1. Select your preferred Overlay Mode above",
+            "2. Click 'Start Monitoring' to select screen regions",
+            "3. Drag to select areas you want to translate",
+            "4. In Snapshot mode: Scans once → Shows subtitle overlay",
+            "5. Click 'Chọn vùng mới' button to select new regions",
+            "6. Press F9 to toggle overlay visibility",
+            "7. List mode: Continuous monitoring with scrollable results"
         ]
 
         for instruction in instructions:
@@ -164,6 +209,12 @@ class UIService:
         """Handle start button click"""
         window.destroy()
         callback()
+
+    def _on_mode_change(self, mode: str, callback: Optional[Callable]):
+        """Handle overlay mode change"""
+        if callback:
+            callback(mode)
+            print(f"[UI Service] Overlay mode changed to: {mode}")
 
     def show_language_settings(
         self,

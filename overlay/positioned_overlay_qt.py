@@ -1,0 +1,278 @@
+"""Positioned Overlay - PyQt6 implementation for individual text box overlays"""
+
+from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtCore import Qt, QTimer, QRectF, pyqtSignal, QObject
+from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetrics
+from typing import List
+import sys
+import threading
+
+
+class OverlaySignals(QObject):
+    """Signals for thread-safe communication"""
+    update_boxes = pyqtSignal(list)
+    show_window = pyqtSignal()
+    hide_window = pyqtSignal()
+    clear_boxes = pyqtSignal()
+
+
+class RegionOverlay(QWidget):
+    """Overlay widget for entire region - draws background and all text boxes"""
+
+    def __init__(self, region_boxes, device_pixel_ratio=1.0, parent=None):
+        super().__init__(parent)
+        self.region_boxes = region_boxes  # List of TranslatedTextBox for this region
+        self.device_pixel_ratio = device_pixel_ratio
+        self.setup_ui()
+
+    def setup_ui(self):
+        """Setup the region overlay"""
+        if not self.region_boxes:
+            return
+
+        # Get region coordinates from first box (all boxes in same region)
+        first_box = self.region_boxes[0]
+        phys_x1, phys_y1, phys_x2, phys_y2 = first_box.region_coords
+
+        # Convert physical to logical coordinates
+        x1 = int(phys_x1 / self.device_pixel_ratio)
+        y1 = int(phys_y1 / self.device_pixel_ratio)
+        x2 = int(phys_x2 / self.device_pixel_ratio)
+        y2 = int(phys_y2 / self.device_pixel_ratio)
+
+        self.region_x = x1
+        self.region_y = y1
+        self.width = x2 - x1
+        self.height = y2 - y1
+
+        # Window flags for overlay
+        self.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Tool |
+            Qt.WindowType.WindowTransparentForInput  # Click-through
+        )
+
+        # Transparent background
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        # Set geometry to cover entire region
+        self.setGeometry(x1, y1, self.width, self.height)
+
+    def paintEvent(self, _event):
+        """Custom paint event - draw background for region, then combined text for all boxes"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Step 1: Draw semi-transparent black background for entire region
+        bg_rect = QRectF(0, 0, self.width, self.height)
+        painter.fillRect(bg_rect, QColor(0, 0, 0, 204))  # 80% opacity black
+
+        # Step 2: Combine all translated texts in the region into one string
+        combined_text = "\n".join(tbox.translated_text for tbox in self.region_boxes)
+
+        # Calculate font size to fit the entire region
+        num_lines = len(self.region_boxes)
+        if num_lines == 0:
+            return  # No text to draw
+        font_size = max(10, min(int(self.height * 0.8 / num_lines), 32))  # Estimate based on number of lines
+        font = QFont('Arial', font_size, QFont.Weight.Bold)
+
+        # Use QFontMetrics to adjust font size to fit within region dimensions
+        metrics = QFontMetrics(font)
+        # Get bounding rect for multi-line text
+        text_rect_needed = metrics.boundingRect(0, 0, int(self.width * 0.9), 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, combined_text)
+        text_width = text_rect_needed.width()
+        text_height = text_rect_needed.height()
+
+        # Reduce font size if text doesn't fit
+        while (text_width > self.width * 0.9 or text_height > self.height * 0.9) and font_size > 10:
+            font_size -= 1
+            font = QFont('Arial', font_size, QFont.Weight.Bold)
+            metrics = QFontMetrics(font)
+            text_rect_needed = metrics.boundingRect(0, 0, int(self.width * 0.9), 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, combined_text)
+            text_width = text_rect_needed.width()
+            text_height = text_rect_needed.height()
+
+        painter.setFont(font)
+
+        # Text rect for the entire region with padding
+        padding_x = self.width * 0.05
+        padding_y = self.height * 0.05
+        text_rect = QRectF(padding_x, padding_y, self.width - 2 * padding_x, self.height - 2 * padding_y)
+
+        # Draw text with slight outline for better visibility
+        # First draw black outline (shadow effect)
+        painter.setPen(QColor(0, 0, 0, 180))
+        for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+            shadow_rect = text_rect.adjusted(dx, dy, dx, dy)
+            painter.drawText(
+                shadow_rect,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                combined_text
+            )
+
+        # Then draw white text on top
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            combined_text
+        )
+
+        painter.end()
+
+
+class PositionedOverlayQt(QWidget):
+    """Manager for region overlays - creates one overlay per region"""
+
+    def __init__(self):
+        # Ensure QApplication exists
+        if not QApplication.instance():
+            self.app = QApplication(sys.argv)
+        else:
+            self.app = QApplication.instance()
+
+        super().__init__()
+
+        self.region_widgets: List = []
+        self.visible = True
+
+        # Get device pixel ratio for DPI scaling correction
+        screen = self.app.primaryScreen()
+        self.device_pixel_ratio = screen.devicePixelRatio()
+        # print(f"[Positioned Overlay Qt] Device Pixel Ratio: {self.device_pixel_ratio}")
+
+        # Signals for thread-safe updates
+        self.signals = OverlaySignals()
+        self.signals.update_boxes.connect(self._update_boxes_slot)
+        self.signals.show_window.connect(self._show_slot)
+        self.signals.hide_window.connect(self._hide_slot)
+        self.signals.clear_boxes.connect(self._clear_slot)
+
+        # Hidden parent window (required for QLabel children)
+        self.setWindowFlags(Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.resize(1, 1)
+        self.hide()
+
+        # print("[Positioned Overlay Qt] Initialized - Individual text box mode")
+
+    def update_text_boxes(self, translated_boxes: List):
+        """
+        Update overlay with translated text boxes (Thread-safe)
+
+        Args:
+            translated_boxes: List of TranslatedTextBox objects
+        """
+        # Use signal for thread-safe update
+        self.signals.update_boxes.emit(translated_boxes)
+
+    def _clear_widgets(self):
+        """Clear all region widgets"""
+        for widget in self.region_widgets:
+            try:
+                widget.hide()
+                widget.deleteLater()
+            except Exception:
+                pass
+        self.region_widgets.clear()
+
+    def _update_boxes_slot(self, translated_boxes: List):
+        """Slot to handle text box updates on main thread"""
+        # Clear existing widgets first to hide old overlays
+        self._clear_widgets()
+
+        # Group translated boxes by region
+        regions = {}
+        for tbox in translated_boxes:
+            region_idx = tbox.region_idx
+            if region_idx not in regions:
+                regions[region_idx] = []
+            regions[region_idx].append(tbox)
+
+        # print(f"[Positioned Overlay Qt] Creating {len(regions)} region overlays for {len(translated_boxes)} text boxes...")
+
+        # Create one overlay widget per region
+        for region_idx, boxes in regions.items():
+            widget = RegionOverlay(boxes, device_pixel_ratio=self.device_pixel_ratio)
+            widget.show()
+            widget.raise_()
+            widget.activateWindow()
+            self.region_widgets.append(widget)
+
+        # print(f"[Positioned Overlay Qt] ✓ Created {len(regions)} region overlays")
+
+    def show(self):
+        """Show all text boxes (Thread-safe)"""
+        self.signals.show_window.emit()
+
+    def _show_slot(self):
+        """Slot to show all region overlays on main thread"""
+        self.visible = True
+        for widget in self.region_widgets:
+            widget.show()
+            widget.raise_()
+            widget.activateWindow()
+        # print(f"[Positioned Overlay Qt] Showing {len(self.region_widgets)} region overlays")
+
+    def hide(self):
+        """Hide all region overlays (Thread-safe)"""
+        self.signals.hide_window.emit()
+
+    def _hide_slot(self):
+        """Slot to hide all region overlays on main thread"""
+        self.visible = False
+        for widget in self.region_widgets:
+            widget.hide()
+        # print("[Positioned Overlay Qt] Hidden")
+
+    def toggle_visibility(self):
+        """Toggle overlay visibility"""
+        if self.visible:
+            self.hide()
+        else:
+            self.show()
+
+    def clear(self):
+        """Clear all text boxes (Thread-safe)"""
+        self.signals.clear_boxes.emit()
+
+    def _clear_slot(self):
+        """Slot to clear text boxes on main thread"""
+        self._clear_widgets()
+        # print("[Positioned Overlay Qt] Cleared")
+
+    def set_subtitle_position(self, position: str):
+        """
+        Set subtitle position (deprecated - kept for compatibility)
+
+        Args:
+            position: "top", "center", or "bottom"
+        """
+        # print(f"[Positioned Overlay Qt] set_subtitle_position is deprecated in individual mode")
+
+
+# Singleton instance
+_overlay_instance = None
+
+
+def get_positioned_overlay_qt():
+    """Get or create the positioned overlay Qt instance (Singleton)"""
+    global _overlay_instance
+
+    if _overlay_instance is None:
+        # Ensure QApplication exists
+        if not QApplication.instance():
+            QApplication(sys.argv)
+
+        _overlay_instance = PositionedOverlayQt()
+        # print("[Positioned Overlay Qt] Singleton instance created - Individual text box mode")
+
+    return _overlay_instance
+
+
+def run_qt_app():
+    """Run Qt event loop (should be called on main thread)"""
+    if QApplication.instance():
+        QApplication.instance().exec()

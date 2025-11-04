@@ -2,8 +2,22 @@
 
 import asyncio
 from typing import Optional, Dict, List
+from dataclasses import dataclass
 from translation import TranslationManager
 from translation.config import TranslationConfig
+
+
+@dataclass
+class TranslatedTextBox:
+    """Data structure for translated text with position information"""
+    original_text: str
+    translated_text: str
+    bbox: tuple  # Relative bbox (x1, y1, x2, y2)
+    abs_bbox: tuple  # Absolute screen bbox (x1, y1, x2, y2)
+    region_idx: int
+    region_coords: tuple
+    model: str
+    confidence: float
 
 
 class TranslationService:
@@ -30,8 +44,8 @@ class TranslationService:
             self.translation_manager = TranslationManager({
                 'gemini_api_key': self.config.get_api_key('gemini')
             })
-            print("[Translation Service] Initialized successfully")
-            print(f"[Translation Service] Available models: {self.get_available_models()}")
+            # print("[Translation Service] Initialized successfully")
+            # print(f"[Translation Service] Available models: {self.get_available_models()}")
         except Exception as e:
             print(f"[Translation Service] Failed to initialize: {e}")
             self.translation_manager = None
@@ -158,3 +172,110 @@ class TranslationService:
         """
         # Run translation in thread pool to avoid blocking event loop
         return await asyncio.to_thread(self.translate, text, region_idx, scan_counter)
+
+    def translate_single_box(self, text: str) -> Optional[Dict]:
+        """
+        Translate a single text box without logging
+
+        Args:
+            text: Text to translate
+
+        Returns:
+            Dictionary with translation result or None
+        """
+        if not self.translation_manager:
+            return None
+
+        try:
+            # Use preferred model if specified
+            result = None
+            if self.preferred_model:
+                result = self.translation_manager.translate_with_model(
+                    text, self.source_lang, self.target_lang, self.preferred_model
+                )
+
+            # Fallback to auto model selection
+            if result is None:
+                result = self.translation_manager.translate(text, self.source_lang, self.target_lang)
+
+            return result
+
+        except Exception as e:
+            print(f"[Translation Service] Error translating text box: {e}")
+            return None
+
+    async def translate_text_boxes_async(self, text_boxes: List, scan_counter: int) -> List[TranslatedTextBox]:
+        """
+        Translate multiple text boxes in parallel (for positioned overlay mode)
+
+        Args:
+            text_boxes: List of TextBox objects from OCR
+            scan_counter: Scan counter for logging
+
+        Returns:
+            List of TranslatedTextBox objects with translation results
+        """
+        if not self.translation_manager or not text_boxes:
+            return []
+
+        # print(f"[Translation Service] Translating {len(text_boxes)} text boxes @ scan {scan_counter}...")
+
+        # Group text boxes by source language for batch optimization
+        # For now, translate all in parallel
+        async def translate_box(text_box):
+            """Translate a single TextBox"""
+            try:
+                # Run translation in thread pool
+                result = await asyncio.to_thread(self.translate_single_box, text_box.text)
+
+                if result:
+                    return TranslatedTextBox(
+                        original_text=text_box.text,
+                        translated_text=result['text'],
+                        bbox=text_box.bbox,
+                        abs_bbox=text_box.abs_bbox,
+                        region_idx=text_box.region_idx,
+                        region_coords=text_box.region_coords,
+                        model=result.get('model_used', 'unknown'),
+                        confidence=result.get('confidence', 0.0)
+                    )
+                else:
+                    # Translation failed, return with original text
+                    return TranslatedTextBox(
+                        original_text=text_box.text,
+                        translated_text=text_box.text,  # Fallback to original
+                        bbox=text_box.bbox,
+                        abs_bbox=text_box.abs_bbox,
+                        region_idx=text_box.region_idx,
+                        region_coords=text_box.region_coords,
+                        model='none',
+                        confidence=0.0
+                    )
+
+            except Exception as e:
+                print(f"[Translation Service] Error translating text box: {e}")
+                # Return original text on error
+                return TranslatedTextBox(
+                    original_text=text_box.text,
+                    translated_text=text_box.text,
+                    bbox=text_box.bbox,
+                    abs_bbox=text_box.abs_bbox,
+                    region_idx=text_box.region_idx,
+                    region_coords=text_box.region_coords,
+                    model='error',
+                    confidence=0.0
+                )
+
+        # Translate all text boxes in parallel
+        tasks = [translate_box(box) for box in text_boxes]
+        translated_boxes = await asyncio.gather(*tasks)
+
+        # Log results
+        # print(f"[Translation Service] Successfully translated {len(translated_boxes)} text boxes")
+        # for i, tbox in enumerate(translated_boxes):
+        #     try:
+        #         print(f"  [{i}] {tbox.original_text} -> {tbox.translated_text} ({tbox.model}, {tbox.confidence:.2f})")
+        #     except UnicodeEncodeError:
+        #         print(f"  [{i}] Translation completed ({tbox.model}, {tbox.confidence:.2f})")
+
+        return translated_boxes
