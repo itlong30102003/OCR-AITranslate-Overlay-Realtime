@@ -109,6 +109,11 @@ class AsyncProcessingService:
             scan_counter: Scan counter
             region_coords: Region's absolute screen coordinates (x1, y1, x2, y2)
         """
+        # Handle clear signal
+        if region_idx == -1:
+            self.overlay_service.clear_positioned_overlay()
+            return
+
         try:
             # Branch based on overlay mode
             if self.overlay_mode == "positioned":

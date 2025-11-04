@@ -139,12 +139,14 @@ class OCRTranslationApp:
         # print("[INFO] Starting async processing service...")
         self.async_service.start()
 
-        # Get scan mode from config
-        scan_mode = self.config.get('scan_mode', 'snapshot')
-        if scan_mode not in ['realtime', 'snapshot']:
-            scan_mode = 'snapshot'
+        # Set scan mode based on overlay mode
+        overlay_mode = self.overlay_service.get_overlay_mode()
+        if overlay_mode == "list":
+            scan_mode = "realtime"  # List overlay: continuous monitoring
+        else:
+            scan_mode = "snapshot"  # Positioned overlay: scan once
 
-        print(f"[INFO] Scan mode: {scan_mode}")
+        print(f"[INFO] Overlay mode: {overlay_mode} -> Scan mode: {scan_mode}")
 
         self.screen_capture = ScreenCapture(
             on_capture=None,

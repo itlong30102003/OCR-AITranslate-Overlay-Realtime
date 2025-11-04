@@ -284,16 +284,18 @@ class MultiRegionMonitor:
 
 
 class ScreenCapture:
-	def __init__(self, on_capture: Callable[[Tuple[int, int, int, int]], None] = None, on_region_change: Optional[Callable[[int, Image.Image, int], None]] = None, scan_mode: str = "realtime"):
+	def __init__(self, on_capture: Callable[[Tuple[int, int, int, int]], None] = None, on_region_change: Optional[Callable[[int, Image.Image, int], None]] = None, scan_mode: str = "realtime", overlay_mode: str = "list"):
 		"""UI flow to select multiple regions, then start region monitoring.
 
 		- on_capture: callback mỗi lần người dùng chọn xong một vùng.
 		- on_region_change: callback khi vùng thay đổi (idx, PIL.Image, scan_counter).
 		- scan_mode: "realtime" (continuous) or "snapshot" (one-shot)
+		- overlay_mode: "list" or "positioned"
 		"""
 		self.on_capture = on_capture
 		self.on_region_change = on_region_change
 		self.scan_mode = scan_mode
+		self.overlay_mode = overlay_mode
 		self.start_x = self.start_y = 0
 		self.canvas = None
 		self.rect_id = None
@@ -394,7 +396,7 @@ class ScreenCapture:
 
 	def _open_viewer(self, regions: List[Tuple[int, int, int, int]]):
 		"""Create the viewer window and wire callbacks to the monitor."""
-		self._viewer = RegionViewer(self.root, regions, scan_mode=self.scan_mode)
+		self._viewer = RegionViewer(self.root, regions, scan_mode=self.scan_mode, overlay_mode=self.overlay_mode)
 		self._monitor = MultiRegionMonitor(
 			regions,
 			fps=15,
@@ -415,6 +417,13 @@ class ScreenCapture:
 	def _restart_selection(self):
 		"""Restart region selection flow (for snapshot mode)"""
 		print("[ScreenCapture] Restarting region selection...")
+		# Clear overlay before restarting
+		if self.on_region_change is not None:
+			try:
+				# Call with None to clear overlay
+				self.on_region_change(-1, None, 0, None)
+			except Exception:
+				pass
 		# Stop current monitor
 		if self._monitor:
 			self._monitor.stop(join=True)
@@ -460,11 +469,12 @@ class ScreenCapture:
 class RegionViewer:
 	"""Tk viewer window that shows live thumbnails per region and control buttons."""
 
-	def __init__(self, root: tk.Misc, regions: List[Tuple[int, int, int, int]], scan_mode: str = "realtime"):
+	def __init__(self, root: tk.Misc, regions: List[Tuple[int, int, int, int]], scan_mode: str = "realtime", overlay_mode: str = "list"):
 		"""Build the viewer UI with a grid of thumbnails and control buttons."""
 		self.root = root
 		self.regions = regions
 		self.scan_mode = scan_mode
+		self.overlay_mode = overlay_mode
 		self.win = tk.Toplevel(self.root)
 		self.win.title("Region Monitor - Snapshot Mode" if scan_mode == "snapshot" else "Region Monitor - Realtime")
 		self.win.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -487,8 +497,8 @@ class RegionViewer:
 			self.restart_btn = tk.Button(info_bar, text="Chọn vùng mới", command=self._on_restart, bg="#4CAF50", fg="white")
 			self.restart_btn.pack(side="right", padx=6, pady=4)
 		else:
-			self.stop_btn = tk.Button(info_bar, text="Dừng theo dõi", command=self._on_stop)
-			self.stop_btn.pack(side="right", padx=6, pady=4)
+			self.restart_btn = tk.Button(info_bar, text="Chọn vùng mới", command=self._on_restart, bg="#4CAF50", fg="white")
+			self.restart_btn.pack(side="right", padx=6, pady=4)
 
 		grid = tk.Frame(self.win)
 		grid.pack(fill="both", expand=True)

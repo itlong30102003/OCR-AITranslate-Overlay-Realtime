@@ -71,28 +71,22 @@ class RegionOverlay(QWidget):
         # Step 2: Combine all translated texts in the region into one string
         combined_text = "\n".join(tbox.translated_text for tbox in self.region_boxes)
 
-        # Calculate font size to fit the entire region
-        num_lines = len(self.region_boxes)
-        if num_lines == 0:
-            return  # No text to draw
-        font_size = max(10, min(int(self.height * 0.8 / num_lines), 32))  # Estimate based on number of lines
+        # Fixed font size for consistent display
+        font_size = 12  # Fixed size, not dynamic
         font = QFont('Arial', font_size, QFont.Weight.Bold)
 
-        # Use QFontMetrics to adjust font size to fit within region dimensions
+        # Use QFontMetrics to check if text fits
         metrics = QFontMetrics(font)
         # Get bounding rect for multi-line text
         text_rect_needed = metrics.boundingRect(0, 0, int(self.width * 0.9), 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, combined_text)
         text_width = text_rect_needed.width()
         text_height = text_rect_needed.height()
 
-        # Reduce font size if text doesn't fit
-        while (text_width > self.width * 0.9 or text_height > self.height * 0.9) and font_size > 10:
-            font_size -= 1
-            font = QFont('Arial', font_size, QFont.Weight.Bold)
-            metrics = QFontMetrics(font)
-            text_rect_needed = metrics.boundingRect(0, 0, int(self.width * 0.9), 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, combined_text)
-            text_width = text_rect_needed.width()
-            text_height = text_rect_needed.height()
+        # If text doesn't fit, truncate it to fit within region
+        if text_width > self.width * 0.9 or text_height > self.height * 0.9:
+            # Calculate how many characters can fit
+            max_chars = int((self.width * 0.9) / (font_size * 0.6)) * len(self.region_boxes)  # Rough estimate
+            combined_text = combined_text[:max_chars] + "..." if len(combined_text) > max_chars else combined_text
 
         painter.setFont(font)
 
@@ -241,7 +235,6 @@ class PositionedOverlayQt(QWidget):
     def _clear_slot(self):
         """Slot to clear text boxes on main thread"""
         self._clear_widgets()
-        # print("[Positioned Overlay Qt] Cleared")
 
     def set_subtitle_position(self, position: str):
         """
