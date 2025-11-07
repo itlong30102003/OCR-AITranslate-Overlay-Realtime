@@ -6,6 +6,9 @@ Manages and selects the best translation model for each language pair
 from typing import Dict, List, Optional, Tuple
 from collections import OrderedDict
 import os
+
+# Suppress TensorFlow and absl warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 from .base_translator import BaseTranslator
 from .gemini_translator import GeminiTranslator
 from .nllb_translator import NLLBTranslator

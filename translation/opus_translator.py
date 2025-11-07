@@ -3,6 +3,10 @@ Helsinki-NLP OPUS-MT Translator Module
 Lightweight translation models for specific language pairs
 """
 
+import os
+# Suppress TensorFlow and absl warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from typing import Dict, Optional
 import torch

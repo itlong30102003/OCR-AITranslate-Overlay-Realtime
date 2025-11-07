@@ -408,23 +408,15 @@ class ScreenCapture:
 		)
 		# Ensure the monitor thread is stopped when viewer stops
 		self._viewer.set_stop_callback(lambda: self._monitor.stop(join=True))
-		# For snapshot mode, add restart callback
-		if self.scan_mode == "snapshot":
-			self._viewer.set_restart_callback(lambda: self._restart_selection())
+		# Add restart callback for both snapshot and realtime modes
+		self._viewer.set_restart_callback(lambda: self._restart_selection())
 		self._monitor.start()
 		self._viewer.show()
 
 	def _restart_selection(self):
-		"""Restart region selection flow (for snapshot mode)"""
+		"""Restart region selection flow (for both snapshot and realtime modes)"""
 		print("[ScreenCapture] Restarting region selection...")
-		# Clear overlay before restarting
-		if self.on_region_change is not None:
-			try:
-				# Call with None to clear overlay
-				self.on_region_change(-1, None, 0, None)
-			except Exception:
-				pass
-		# Stop current monitor
+		# Stop current monitor first
 		if self._monitor:
 			self._monitor.stop(join=True)
 		# Close current viewer

@@ -71,46 +71,74 @@ class RegionOverlay(QWidget):
         # Step 2: Combine all translated texts in the region into one string
         combined_text = "\n".join(tbox.translated_text for tbox in self.region_boxes)
 
-        # Fixed font size for consistent display
-        font_size = 12  # Fixed size, not dynamic
+        # Auto-scale font size to fit all text with readable minimum
+        min_font_size = 10  # Minimum readable font size (increased from 6 to 10)
+        max_font_size = 20  # Maximum font size
+
+        # Available area for text (with padding)
+        padding_ratio = 0.05
+        available_width = int(self.width * (1 - 2 * padding_ratio))
+        available_height = int(self.height * (1 - 2 * padding_ratio))
+
+        # Try to find optimal font size that fits all text
+        best_font_size = min_font_size
+        for test_size in range(max_font_size, min_font_size - 1, -1):
+            font = QFont('Arial', test_size, QFont.Weight.Bold)
+            metrics = QFontMetrics(font)
+            text_rect_needed = metrics.boundingRect(
+                0, 0, available_width, 0,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
+                combined_text
+            )
+
+            # Check if text fits within available space
+            if text_rect_needed.width() <= available_width and text_rect_needed.height() <= available_height:
+                best_font_size = test_size
+                break
+
+        # Use the best font size found
+        font_size = best_font_size
         font = QFont('Arial', font_size, QFont.Weight.Bold)
-
-        # Use QFontMetrics to check if text fits
-        metrics = QFontMetrics(font)
-        # Get bounding rect for multi-line text
-        text_rect_needed = metrics.boundingRect(0, 0, int(self.width * 0.9), 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, combined_text)
-        text_width = text_rect_needed.width()
-        text_height = text_rect_needed.height()
-
-        # If text doesn't fit, truncate it to fit within region
-        if text_width > self.width * 0.9 or text_height > self.height * 0.9:
-            # Calculate how many characters can fit
-            max_chars = int((self.width * 0.9) / (font_size * 0.6)) * len(self.region_boxes)  # Rough estimate
-            combined_text = combined_text[:max_chars] + "..." if len(combined_text) > max_chars else combined_text
-
         painter.setFont(font)
 
+        # If font is at minimum and text still doesn't fit, expand the overlay vertically
+        metrics = QFontMetrics(font)
+        text_rect_needed = metrics.boundingRect(
+            0, 0, available_width, 0,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
+            combined_text
+        )
+
+        # Calculate actual needed height
+        needed_height = text_rect_needed.height() + int(self.height * 2 * padding_ratio)
+
+        # If text needs more height and we're at minimum font size, expand overlay
+        if font_size == min_font_size and needed_height > self.height:
+            # Expand overlay height to fit all text
+            self.setGeometry(self.region_x, self.region_y, self.width, needed_height)
+            self.height = needed_height
+
         # Text rect for the entire region with padding
-        padding_x = self.width * 0.05
-        padding_y = self.height * 0.05
+        padding_x = self.width * padding_ratio
+        padding_y = self.height * padding_ratio
         text_rect = QRectF(padding_x, padding_y, self.width - 2 * padding_x, self.height - 2 * padding_y)
 
-        # Draw text with slight outline for better visibility
+        # Draw text with slight outline for better visibility and word wrap
         # First draw black outline (shadow effect)
         painter.setPen(QColor(0, 0, 0, 180))
         for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
             shadow_rect = text_rect.adjusted(dx, dy, dx, dy)
             painter.drawText(
                 shadow_rect,
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
                 combined_text
             )
 
-        # Then draw white text on top
+        # Then draw white text on top with word wrap
         painter.setPen(QColor(255, 255, 255))
         painter.drawText(
             text_rect,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
             combined_text
         )
 
@@ -124,6 +152,8 @@ class PositionedOverlayQt(QWidget):
         # Ensure QApplication exists
         if not QApplication.instance():
             self.app = QApplication(sys.argv)
+            # Suppress Qt warnings
+            self.app.setQuitOnLastWindowClosed(False)
         else:
             self.app = QApplication.instance()
 
