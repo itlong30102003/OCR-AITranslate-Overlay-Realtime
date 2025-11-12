@@ -416,6 +416,9 @@ class ScreenCapture:
 	def _restart_selection(self):
 		"""Restart region selection flow (for both snapshot and realtime modes)"""
 		print("[ScreenCapture] Restarting region selection...")
+		# Clear overlay before selecting new region
+		if self.on_region_change:
+			self.on_region_change(-1, None, 0, None)
 		# Stop current monitor first
 		if self._monitor:
 			self._monitor.stop(join=True)
