@@ -85,10 +85,10 @@ class NLLBTranslator(BaseTranslator):
         try:
             # Set source language for tokenizer
             self.tokenizer.src_lang = src
-            
+
             # Tokenize input
             inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
-            
+
             # Generate translation
             with torch.no_grad():
                 outputs = self.model.generate(
@@ -98,10 +98,10 @@ class NLLBTranslator(BaseTranslator):
                     num_beams=4,
                     early_stopping=True
                 )
-            
+
             # Decode output
             translated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
+
             return {
                 'text': translated_text.strip(),
                 'confidence': 0.8,
@@ -110,7 +110,38 @@ class NLLBTranslator(BaseTranslator):
                 'source_lang': source_lang,
                 'target_lang': target_lang
             }
-            
+
+        except RuntimeError as e:
+            if "Already borrowed" in str(e):
+                print(f"NLLB-200 translation failed: GPU context already in use. Retrying...")
+                # Try to clear GPU cache and retry once
+                try:
+                    torch.cuda.empty_cache()
+                    # Retry translation
+                    inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            **inputs,
+                            forced_bos_token_id=self.tokenizer.convert_tokens_to_ids(tgt),
+                            max_length=512,
+                            num_beams=4,
+                            early_stopping=True
+                        )
+                    translated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    return {
+                        'text': translated_text.strip(),
+                        'confidence': 0.8,
+                        'model': self.model_name,
+                        'cost': 0,
+                        'source_lang': source_lang,
+                        'target_lang': target_lang
+                    }
+                except Exception as retry_e:
+                    print(f"NLLB-200 retry failed: {retry_e}")
+                    return None
+            else:
+                print(f"NLLB-200 translation failed: {e}")
+                return None
         except Exception as e:
             print(f"NLLB-200 translation failed: {e}")
             return None

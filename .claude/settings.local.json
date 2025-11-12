@@ -4,7 +4,8 @@
       "Bash(python:*)",
       "Bash(timeout 5 python:*)",
       "Bash(find:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

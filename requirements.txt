@@ -39,8 +39,13 @@ bitsandbytes>=0.44.1  # optional for 8-bit GPU loading
 # GUI and overlay dependencies
 # tkinter (included with Python on Windows; do not install via pip)
 pygame>=2.5.0  # For overlay rendering
-PyQt6>=6.5.0  # For advanced overlay window
+PyQt6>=6.5.0  # For advanced overlay window and UI
 PyQt6-Qt6>=6.5.0  # Ensure Qt6 backend
+
+# Firebase dependencies (MVP)
+firebase-admin>=6.2.0  # Firebase Admin SDK for Firestore
+Pyrebase4>=4.7.0  # Firebase client SDK for Authentication
+python-dotenv>=1.0.0  # Environment variable management
 
 # Development tools (optional - comment out for production)
 # pytest>=7.0.0

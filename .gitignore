@@ -3,6 +3,10 @@ config.env
 .env
 *.env
 
+# Firebase secrets (CRITICAL - NEVER COMMIT)
+serviceAccountKey.json
+.session
+
 # Python
 __pycache__/
 *.py[cod]

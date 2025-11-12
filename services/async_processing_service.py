@@ -9,7 +9,7 @@ from PIL import Image
 class AsyncProcessingService:
     """Service for managing async OCR and Translation pipeline"""
 
-    def __init__(self, ocr_service, translation_service, overlay_service, overlay_mode: str = "list"):
+    def __init__(self, ocr_service, translation_service, overlay_service, overlay_mode: str = "list", user_id: str = None):
         """
         Initialize Async Processing Service
 
@@ -18,18 +18,23 @@ class AsyncProcessingService:
             translation_service: TranslationService instance
             overlay_service: OverlayService instance
             overlay_mode: Overlay mode - "list" (default) or "positioned"
+            user_id: User ID for local history (optional)
         """
         self.ocr_service = ocr_service
         self.translation_service = translation_service
         self.overlay_service = overlay_service
         self.overlay_mode = overlay_mode  # "list" or "positioned"
+        self.user_id = user_id
+
+        # Local history service (lazy load)
+        self._history_service = None
 
         # Event loop for async processing
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread: Optional[threading.Thread] = None
         self._running = False
 
-        print(f"[Async Processing Service] Initialized (mode: {overlay_mode})")
+        print(f"[Async Processing Service] Initialized (mode: {overlay_mode}, user_id: {user_id})")
 
     def start(self):
         """Start the async processing event loop in a separate thread"""
@@ -99,6 +104,43 @@ class AsyncProcessingService:
         else:
             print(f"[Async Processing Service] Invalid overlay mode: {mode}")
 
+    def set_user_id(self, user_id: str):
+        """Set user ID for history tracking"""
+        self.user_id = user_id
+        print(f"[Async Processing Service] User ID set: {user_id}")
+
+    def _get_history_service(self):
+        """Lazy load local history service"""
+        if self._history_service is None and self.user_id:
+            try:
+                from firebase.local_history_service import LocalHistoryService
+                self._history_service = LocalHistoryService()
+                print("[Async Processing Service] Local history service loaded")
+            except Exception as e:
+                print(f"[Async Processing Service] Failed to load local history: {e}")
+        return self._history_service
+
+    async def _save_to_history(self, source_text: str, translated_text: str, source_lang: str, target_lang: str, model: str, confidence: float):
+        """Save translation to Firebase history"""
+        if not self.user_id:
+            return
+
+        history_service = self._get_history_service()
+        if history_service:
+            try:
+                await asyncio.to_thread(
+                    history_service.save_translation,
+                    user_id=self.user_id,
+                    source_text=source_text,
+                    translated_text=translated_text,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    model_used=model,
+                    confidence=confidence
+                )
+            except Exception as e:
+                print(f"[Async Processing Service] Failed to save history: {e}")
+
     async def _process_region(self, region_idx: int, img: Image.Image, scan_counter: int, region_coords: tuple = None):
         """
         Internal async method to process region
@@ -115,6 +157,10 @@ class AsyncProcessingService:
             return
 
         try:
+            # Clear previous overlays before processing new region
+            if self.overlay_mode == "positioned":
+                self.overlay_service.clear_positioned_overlay()
+
             # Branch based on overlay mode
             if self.overlay_mode == "positioned":
                 await self._process_region_positioned(region_idx, img, scan_counter, region_coords)
@@ -147,6 +193,16 @@ class AsyncProcessingService:
                 if result:
                     # Step 3: Update overlay (thread-safe)
                     self.overlay_service.update_translation(region_idx, result)
+
+                    # Step 4: Save to Firebase history
+                    await self._save_to_history(
+                        source_text=text,
+                        translated_text=result.translation,
+                        source_lang=result.source_lang,
+                        target_lang=result.target_lang,
+                        model=result.model,
+                        confidence=result.confidence
+                    )
 
         except Exception as e:
             print(f"[Async Processing Service] Error processing region {region_idx} (list mode): {e}")
@@ -183,6 +239,17 @@ class AsyncProcessingService:
                 if translated_boxes:
                     # Step 3: Update positioned overlay (thread-safe)
                     self.overlay_service.update_positioned_overlay(region_idx, translated_boxes)
+
+                    # Step 4: Save each translation to local history
+                    for box in translated_boxes:
+                        await self._save_to_history(
+                            source_text=box.original_text,
+                            translated_text=box.translated_text,
+                            source_lang=self.translation_service.source_lang,
+                            target_lang=self.translation_service.target_lang,
+                            model=box.model,
+                            confidence=box.confidence
+                        )
 
         except Exception as e:
             print(f"[Async Processing Service] Error processing region {region_idx} (positioned mode): {e}")
