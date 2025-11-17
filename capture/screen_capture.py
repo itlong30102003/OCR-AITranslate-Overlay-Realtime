@@ -177,6 +177,15 @@ class MultiRegionMonitor:
 		self._thread: Optional[threading.Thread] = None
 		self.scan_mode = scan_mode  # "realtime" or "snapshot"
 		self._regions_scanned = set()  # Track which regions have been processed in snapshot mode
+		self._completion_callback = None  # Callback when snapshot is complete
+
+	def set_completion_callback(self, callback: Callable[[], None]):
+		"""Set callback to be called when snapshot monitoring is complete"""
+		self._completion_callback = callback
+
+	def clear_completion_callback(self):
+		"""Clear the completion callback"""
+		self._completion_callback = None
 
 	def start(self):
 		"""Start the monitoring loop on a background daemon thread."""
@@ -272,6 +281,12 @@ class MultiRegionMonitor:
 			if self.scan_mode == "snapshot" and len(self._regions_scanned) == len(self.regions):
 				print(f"[Monitor] Snapshot complete - all {len(self.regions)} region(s) processed. Stopping.")
 				self._stop_event.set()
+				# Call completion callback if set
+				if self._completion_callback:
+					try:
+						self._completion_callback()
+					except Exception as e:
+						print(f"[Monitor] Error in completion callback: {e}")
 				break
 
 			elapsed = time.time() - start_time
@@ -432,6 +447,22 @@ class ScreenCapture:
 		self.captured_coords.clear()
 		# Start new selection
 		self._capture_loop()
+
+	def stop(self):
+		"""Stop the screen capture and monitoring."""
+		if self._monitor:
+			self._monitor.stop(join=True)
+			print("[ScreenCapture] Monitor stopped")
+		if self._viewer:
+			try:
+				self._viewer._on_close()
+			except Exception:
+				pass
+		try:
+			if self.root:
+				self.root.quit()
+		except Exception:
+			pass
 
 	def _handle_region_change(self, idx: int, img: Image.Image, scan: int, coords: tuple):
 		"""Forward region image to viewer and external callback (if any)."""

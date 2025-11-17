@@ -1,10 +1,14 @@
 """Main Window - Main application window with tabs"""
 
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QPushButton, QStackedWidget, QMessageBox)
+                             QLabel, QPushButton, QStackedWidget, QMessageBox, QApplication)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtCore import QSize
 from firebase.auth_service import FirebaseAuthService
 from ui.tabs.history_tab import HistoryTab
+from ui.tabs.monitor_tab import MonitorTab
+from ui.floating_control import FloatingControl
 
 
 class MainWindow(QMainWindow):
@@ -20,7 +24,11 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """Initialize UI"""
         self.setWindowTitle("AI Overlay Translate")
-        self.setMinimumSize(1200, 800)
+        self.resize(1024, 576)  # Default size
+        # self.setMinimumSize(1000, 700)  # Smaller minimum size
+
+        # Remove window frame (title bar, borders) for frameless window
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
         # Apply dark theme
         self.setStyleSheet(self.get_dark_theme())
@@ -29,25 +37,78 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        # Main layout: Sidebar + Content
+        # Main layout: UI + Toggle Button on the right
         layout = QHBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(10)  # Add some spacing between UI and button
+
+        # Create the main UI widget (entire interface)
+        self.my_ui_widget = QWidget()
+        ui_layout = QHBoxLayout(self.my_ui_widget)
+        ui_layout.setContentsMargins(0, 0, 0, 0)
+        ui_layout.setSpacing(0)
 
         # Sidebar
         self.sidebar = self.create_sidebar()
-        layout.addWidget(self.sidebar)
+        ui_layout.addWidget(self.sidebar)
 
         # Content stack (different tabs)
         self.content_stack = QStackedWidget()
-        layout.addWidget(self.content_stack)
+        ui_layout.addWidget(self.content_stack)
 
         # Add tabs
         self.tab_main = self.create_main_tab()
         self.tab_history = HistoryTab(user_id=self.user['localId'])
+        self.tab_monitor = MonitorTab(app_instance=self.app)
 
         self.content_stack.addWidget(self.tab_main)
         self.content_stack.addWidget(self.tab_history)
+        self.content_stack.addWidget(self.tab_monitor)
+
+        # Create floating control
+        self.floating_control = FloatingControl()
+        self.floating_control.toggle_main_window.connect(self.toggle_visibility)
+        self.floating_control.stop_monitoring.connect(self.tab_monitor.stop_monitoring)
+        self.floating_control.select_new_region.connect(self.tab_monitor.select_region)
+
+        layout.addWidget(self.my_ui_widget)
+
+        # No opacity effect needed for basic toggle
+
+        # Create separate floating toggle button (not part of main layout)
+        self.toggle_ui_btn = QPushButton()
+        self.toggle_ui_btn.setFixedSize(50, 50)
+
+        # Set icon from Icons/App.png
+        icon_pixmap = QPixmap("Icons/App.png")
+        if not icon_pixmap.isNull():
+            # Fixed icon size 47x47
+            self.toggle_ui_btn.setIcon(QIcon(icon_pixmap))
+            self.toggle_ui_btn.setIconSize(QSize(47,47))
+
+        # self.toggle_ui_btn.setStyleSheet("""
+        #     QPushButton {
+        #         border: none;
+        #         background: transparent;
+        #     }
+        # """)
+        self.toggle_ui_btn.clicked.connect(self._toggle_ui_visibility)
+        self.toggle_ui_btn.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        self.toggle_ui_btn.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        # Initially show the floating button in bottom-right corner (moved up 40px)
+        screen = QApplication.primaryScreen()
+        screen_geometry = screen.geometry()
+        self.toggle_ui_btn.move(screen_geometry.width() - 90, screen_geometry.height() - 80)
+        self.toggle_ui_btn.show()
+        self.toggle_ui_btn.raise_()
+        self.toggle_ui_btn.activateWindow()
+
+        # Initialize UI visibility state
+        self.ui_visible = True
+
+        # Store original window position for restore
+        self.original_position = None
 
         # Select first tab
         self.switch_tab(0)
@@ -93,8 +154,9 @@ class MainWindow(QMainWindow):
 
         btn_main = self.create_nav_button("🏠  Chính", 0)
         btn_history = self.create_nav_button("📜  Lịch sử", 1)
+        btn_monitor = self.create_nav_button("👁️  Giám sát", 2)
 
-        for btn in [btn_main, btn_history]:
+        for btn in [btn_main, btn_history, btn_monitor]:
             self.nav_buttons.append(btn)
             layout.addWidget(btn)
 
@@ -264,13 +326,17 @@ class MainWindow(QMainWindow):
         return widget
 
     def start_ocr(self):
-        """Start OCR workflow"""
+        """Start OCR workflow - Switch to Monitor tab"""
         try:
-            # Minimize main window
-            self.showMinimized()
+            # Switch to Monitor tab (index 2)
+            self.switch_tab(2)
 
-            # Start capture
-            self.app.start_capture()
+            # Show message to guide user
+            QMessageBox.information(
+                self,
+                "Bắt đầu OCR",
+                "Vui lòng sử dụng tab 'Giám sát' để chọn vùng và bắt đầu dịch."
+            )
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to start OCR: {e}")
@@ -292,7 +358,6 @@ class MainWindow(QMainWindow):
                 # Give some time for sync to complete
                 import time
                 time.sleep(2)
-                self.app.sync_service.stop()
 
             # Clear local history for current user
             if hasattr(self.app, 'local_history') and self.app.local_history and self.user:
@@ -307,6 +372,34 @@ class MainWindow(QMainWindow):
             from ui.login_window import LoginWindow
             self.login_window = LoginWindow()
             self.login_window.show()
+
+    def toggle_visibility(self):
+        """Toggle main window visibility"""
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
+    def _toggle_ui_visibility(self):
+        """Toggle UI widget visibility"""
+        if self.ui_visible:
+            # Store current position before hiding
+            self.original_position = self.pos()
+            # Hide UI immediately
+            self.hide()
+            self.ui_visible = False
+        else:
+            # Show UI immediately
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            if self.original_position:
+                self.move(self.original_position)
+            self.ui_visible = True
+
+    # Removed fade animation methods - using basic toggle now
 
     def get_dark_theme(self):
         """Dark theme stylesheet"""

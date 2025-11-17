@@ -38,8 +38,13 @@ class AsyncProcessingService:
 
     def start(self):
         """Start the async processing event loop in a separate thread"""
-        if self._running:
+        if self._running and self._loop and not self._loop.is_closed():
             return
+
+        # If loop exists but closed, clean up
+        if self._loop and self._loop.is_closed():
+            self._loop = None
+            self._running = False
 
         self._running = True
         self._loop_thread = threading.Thread(target=self._run_event_loop, daemon=True)
@@ -58,15 +63,20 @@ class AsyncProcessingService:
             return
 
         self._running = False
-        if self._loop:
-            # Cancel all pending tasks
-            pending = asyncio.all_tasks(self._loop)
-            for task in pending:
-                self._loop.call_soon_threadsafe(task.cancel)
 
-            # Stop the loop
-            self._loop.call_soon_threadsafe(self._loop.stop)
-        print("[Async Processing Service] Stopped")
+        # Properly stop the event loop to prevent "cannot schedule new futures after shutdown" errors
+        if self._loop and not self._loop.is_closed():
+            try:
+                # Schedule the loop to stop
+                self._loop.call_soon_threadsafe(self._loop.stop)
+                # Wait for the thread to finish
+                if self._loop_thread and self._loop_thread.is_alive():
+                    self._loop_thread.join(timeout=2.0)
+                print("[Async Processing Service] Event loop properly stopped")
+            except Exception as e:
+                print(f"[Async Processing Service] Error stopping event loop: {e}")
+        else:
+            print("[Async Processing Service] Stopped (loop already closed)")
 
     def process_region_async(self, region_idx: int, img: Image.Image, scan_counter: int, region_coords: tuple = None):
         """
@@ -83,13 +93,21 @@ class AsyncProcessingService:
             self.start()
             # Wait a bit for loop to start
             import time
-            time.sleep(0.1)
+            time.sleep(0.3)
 
-        # Schedule the async task
-        asyncio.run_coroutine_threadsafe(
-            self._process_region(region_idx, img, scan_counter, region_coords),
-            self._loop
-        )
+        # Check if loop is still running before scheduling
+        if self._running and self._loop and not self._loop.is_closed():
+            try:
+                # Schedule the async task
+                asyncio.run_coroutine_threadsafe(
+                    self._process_region(region_idx, img, scan_counter, region_coords),
+                    self._loop
+                )
+            except RuntimeError as e:
+                if "cannot schedule new futures after shutdown" not in str(e):
+                    print(f"[Async Processing Service] Error scheduling task: {e}")
+        else:
+            print("[Async Processing Service] Event loop not available")
 
     def set_overlay_mode(self, mode: str):
         """
@@ -114,7 +132,8 @@ class AsyncProcessingService:
         if self._history_service is None and self.user_id:
             try:
                 from firebase.local_history_service import LocalHistoryService
-                self._history_service = LocalHistoryService()
+                # Initialize with correct user_id and batch_size
+                self._history_service = LocalHistoryService(batch_size=20, current_user_id=self.user_id)
                 print("[Async Processing Service] Local history service loaded")
             except Exception as e:
                 print(f"[Async Processing Service] Failed to load local history: {e}")
@@ -128,8 +147,9 @@ class AsyncProcessingService:
         history_service = self._get_history_service()
         if history_service:
             try:
-                await asyncio.to_thread(
-                    history_service.save_translation,
+                # Call synchronously - SQLite writes are fast and don't need async
+                # This avoids event loop shutdown issues with asyncio.to_thread
+                history_service.save_translation(
                     user_id=self.user_id,
                     source_text=source_text,
                     translated_text=translated_text,
@@ -138,8 +158,11 @@ class AsyncProcessingService:
                     model_used=model,
                     confidence=confidence
                 )
+                print(f"[Async Processing Service] Saved to history: {source_text[:30]}... -> {translated_text[:30]}...")
             except Exception as e:
                 print(f"[Async Processing Service] Failed to save history: {e}")
+                import traceback
+                traceback.print_exc()
 
     async def _process_region(self, region_idx: int, img: Image.Image, scan_counter: int, region_coords: tuple = None):
         """
@@ -169,6 +192,8 @@ class AsyncProcessingService:
 
         except Exception as e:
             print(f"[Async Processing Service] Error processing region {region_idx}: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _process_region_list(self, region_idx: int, img: Image.Image, scan_counter: int):
         """
@@ -219,7 +244,7 @@ class AsyncProcessingService:
         """
         try:
             if region_coords is None:
-                print(f"[Async Processing Service] Warning: region_coords is None for positioned mode")
+                print(f"[Async Processing Service] Warning: region_coords is None")
                 return
 
             # Step 1: OCR with bounding boxes (async)
@@ -253,6 +278,8 @@ class AsyncProcessingService:
 
         except Exception as e:
             print(f"[Async Processing Service] Error processing region {region_idx} (positioned mode): {e}")
+            import traceback
+            traceback.print_exc()
 
     async def process_multiple_regions(self, regions: Dict[int, tuple]):
         """
@@ -268,6 +295,18 @@ class AsyncProcessingService:
 
         # Run all tasks concurrently
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    def process_region_change(self, idx: int, img: Image.Image, scan_counter: int, region_coords: tuple = None):
+        """
+        Process a region change (called from monitor tab)
+
+        Args:
+            idx: Region index
+            img: PIL Image to process
+            scan_counter: Scan counter
+            region_coords: Region's absolute screen coordinates (x1, y1, x2, y2)
+        """
+        self.process_region_async(idx, img, scan_counter, region_coords)
 
     def is_running(self) -> bool:
         """Check if async processing is running"""

@@ -34,6 +34,9 @@ class RegionOverlay(QWidget):
         first_box = self.region_boxes[0]
         phys_x1, phys_y1, phys_x2, phys_y2 = first_box.region_coords
 
+        print(f"[RegionOverlay] Physical coords: ({phys_x1}, {phys_y1}, {phys_x2}, {phys_y2})")
+        print(f"[RegionOverlay] Device pixel ratio: {self.device_pixel_ratio}")
+
         # Convert physical to logical coordinates
         x1 = int(phys_x1 / self.device_pixel_ratio)
         y1 = int(phys_y1 / self.device_pixel_ratio)
@@ -44,6 +47,8 @@ class RegionOverlay(QWidget):
         self.region_y = y1
         self.width = x2 - x1
         self.height = y2 - y1
+
+        print(f"[RegionOverlay] Logical position: ({x1}, {y1}), size: {self.width}x{self.height}")
 
         # Window flags for overlay
         self.setWindowFlags(
@@ -61,12 +66,15 @@ class RegionOverlay(QWidget):
 
     def paintEvent(self, _event):
         """Custom paint event - draw background for region, then combined text for all boxes"""
+        print(f"[RegionOverlay] paintEvent called - drawing overlay at ({self.region_x}, {self.region_y}), size {self.width}x{self.height}")
+
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # Step 1: Draw semi-transparent black background for entire region
         bg_rect = QRectF(0, 0, self.width, self.height)
         painter.fillRect(bg_rect, QColor(0, 0, 0, 204))  # 80% opacity black
+        print(f"[RegionOverlay] Drew background rect")
 
         # Step 2: Combine all translated texts in the region into one string
         combined_text = "\n".join(tbox.translated_text for tbox in self.region_boxes)
@@ -142,6 +150,8 @@ class RegionOverlay(QWidget):
             combined_text
         )
 
+        print(f"[RegionOverlay] Drew text: '{combined_text[:50]}...' at font size {font_size}")
+
         painter.end()
 
 
@@ -204,6 +214,8 @@ class PositionedOverlayQt(QWidget):
 
     def _update_boxes_slot(self, translated_boxes: List):
         """Slot to handle text box updates on main thread"""
+        print(f"[Positioned Overlay Qt] _update_boxes_slot called with {len(translated_boxes)} boxes")
+
         # Clear existing widgets first to hide old overlays
         self._clear_widgets()
 
@@ -215,17 +227,25 @@ class PositionedOverlayQt(QWidget):
                 regions[region_idx] = []
             regions[region_idx].append(tbox)
 
-        # print(f"[Positioned Overlay Qt] Creating {len(regions)} region overlays for {len(translated_boxes)} text boxes...")
+        print(f"[Positioned Overlay Qt] Creating {len(regions)} region overlays...")
 
         # Create one overlay widget per region
         for region_idx, boxes in regions.items():
+            print(f"[Positioned Overlay Qt] Creating overlay for region {region_idx} with {len(boxes)} boxes")
             widget = RegionOverlay(boxes, device_pixel_ratio=self.device_pixel_ratio)
             widget.show()
             widget.raise_()
             widget.activateWindow()
             self.region_widgets.append(widget)
+            pos = widget.pos()
+            size = widget.size()
+            print(f"[Positioned Overlay Qt] Widget shown: visible={widget.isVisible()}")
+            print(f"[Positioned Overlay Qt]   Position: x={pos.x()}, y={pos.y()}")
+            print(f"[Positioned Overlay Qt]   Size: {size.width()}x{size.height()}")
+            print(f"[Positioned Overlay Qt]   WindowFlags: {widget.windowFlags()}")
+            print(f"[Positioned Overlay Qt]   WindowState: {widget.windowState()}")
 
-        # print(f"[Positioned Overlay Qt] ✓ Created {len(regions)} region overlays")
+        print(f"[Positioned Overlay Qt] ✓ Created {len(regions)} region overlays")
 
     def show(self):
         """Show all text boxes (Thread-safe)"""

@@ -8,7 +8,7 @@ from PIL import Image
 # Create QApplication FIRST
 app = QApplication(sys.argv)
 
-from capture.screen_capture import ScreenCapture
+from capture.screen_capture_integrated import IntegratedScreenCapture
 from translation.config import TranslationConfig
 from services import OCRService, TranslationService, OverlayService, UIService, AsyncProcessingService
 from firebase.auth_service import FirebaseAuthService
@@ -64,6 +64,10 @@ class OCRTranslationApp:
             user_id=user_id
         )
 
+        # Start async service immediately so event loop is ready
+        print("[INFO] Starting async processing service...")
+        self.async_service.start()
+
         # Initialize local history and sync services if user_id provided
         self.local_history = None
         self.sync_service = None
@@ -73,13 +77,39 @@ class OCRTranslationApp:
             self.sync_service.start()  # Start background batch sync
             print("[INFO] Local history and batch sync services initialized")
 
-        # Screen capture (will be initialized when monitoring starts)
-        self.screen_capture = None
+        # Integrated screen capture (will be initialized when monitoring starts)
+        self.integrated_capture = None
 
         print("[INFO] OCR Translation App initialized")
         print(f"[INFO] Translation available: {self.translation_service.is_available()}")
         print(f"[INFO] Overlay mode: {overlay_mode}")
         print(f"[INFO] User ID: {user_id}")
+
+    def stop_all_services(self):
+        """Stop all background services"""
+        print("[App] Stopping all background services...")
+
+        # Stop async processing service
+        if hasattr(self, 'async_service') and self.async_service:
+            self.async_service.stop()
+            print("[App] Async processing service stopped")
+
+        # Stop integrated capture
+        if hasattr(self, 'integrated_capture') and self.integrated_capture:
+            self.integrated_capture.stop_monitoring()
+            print("[App] Integrated capture stopped")
+
+        # Stop sync service
+        if hasattr(self, 'sync_service') and self.sync_service:
+            self.sync_service.stop()
+            print("[App] Sync service stopped")
+
+        # Clear overlay
+        if hasattr(self, 'overlay_service') and self.overlay_service:
+            self.overlay_service.clear_positioned_overlay()
+            print("[App] Overlay cleared")
+
+        print("[App] All services stopped successfully")
 
     def on_region_change(self, idx: int, img: Image.Image, scan_counter: int, region_coords: tuple = None):
         """
@@ -118,13 +148,9 @@ class OCRTranslationApp:
 
         print(f"[INFO] Overlay mode: {overlay_mode} -> Scan mode: {scan_mode}")
 
-        self.screen_capture = ScreenCapture(
-            on_capture=None,
-            on_region_change=self.on_region_change,
-            scan_mode=scan_mode
-        )
-
-        self.screen_capture.start_capture()
+        # Note: Integrated capture is now handled by the MonitorTab in the UI
+        # The tab will create its own IntegratedScreenCapture instance
+        print(f"[INFO] Capture mode delegated to MonitorTab ({scan_mode} mode)")
 
 
 def main():

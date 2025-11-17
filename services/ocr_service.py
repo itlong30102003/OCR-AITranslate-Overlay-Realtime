@@ -170,6 +170,8 @@ class OCRService:
 
         except Exception as e:
             print(f"[OCR Service] Error processing region {region_idx} with boxes: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     async def process_image_with_boxes_async(
