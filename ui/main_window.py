@@ -104,6 +104,15 @@ class MainWindow(QMainWindow):
         self.toggle_ui_btn.raise_()
         self.toggle_ui_btn.activateWindow()
 
+        # Make toggle button draggable
+        self.toggle_dragging = False
+        self.toggle_offset = None
+
+        # Connect toggle button mouse events for dragging
+        self.toggle_ui_btn.mousePressEvent = self._toggle_mouse_press
+        self.toggle_ui_btn.mouseMoveEvent = self._toggle_mouse_move
+        self.toggle_ui_btn.mouseReleaseEvent = self._toggle_mouse_release
+
         # Initialize UI visibility state
         self.ui_visible = True
 
@@ -398,6 +407,55 @@ class MainWindow(QMainWindow):
             if self.original_position:
                 self.move(self.original_position)
             self.ui_visible = True
+
+    def mousePressEvent(self, event):
+        """Handle mouse press for dragging main window"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = True
+            self.offset = event.pos()
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for dragging main window"""
+        if self.dragging and self.offset:
+            self.move(self.pos() + event.pos() - self.offset)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = False
+            self.offset = None
+
+    def _toggle_mouse_press(self, event):
+        """Handle mouse press for dragging toggle button"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Check if this is a click (small movement) or drag start
+            self.toggle_drag_start_pos = event.pos()
+            self.toggle_dragging = False  # Will be set to True on move if it's a drag
+            self.toggle_offset = event.pos()
+
+    def _toggle_mouse_move(self, event):
+        """Handle mouse move for dragging toggle button"""
+        if not self.toggle_dragging:
+            # Check if movement is significant enough to start dragging
+            if hasattr(self, 'toggle_drag_start_pos'):
+                dx = abs(event.pos().x() - self.toggle_drag_start_pos.x())
+                dy = abs(event.pos().y() - self.toggle_drag_start_pos.y())
+                if dx > 5 or dy > 5:  # 5 pixel threshold
+                    self.toggle_dragging = True
+
+        if self.toggle_dragging and self.toggle_offset:
+            self.toggle_ui_btn.move(self.toggle_ui_btn.pos() + event.pos() - self.toggle_offset)
+
+    def _toggle_mouse_release(self, event):
+        """Handle mouse release for toggle button"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            if not self.toggle_dragging:
+                # This was a click, not a drag - trigger toggle
+                self._toggle_ui_visibility()
+            self.toggle_dragging = False
+            self.toggle_offset = None
+            if hasattr(self, 'toggle_drag_start_pos'):
+                delattr(self, 'toggle_drag_start_pos')
 
     # Removed fade animation methods - using basic toggle now
 
