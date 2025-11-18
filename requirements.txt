@@ -42,6 +42,9 @@ pygame>=2.5.0  # For overlay rendering
 PyQt6>=6.5.0  # For advanced overlay window and UI
 PyQt6-Qt6>=6.5.0  # Ensure Qt6 backend
 
+# Windows API dependencies (for Window DC Capture)
+pywin32>=306  # Windows API (BitBlt, win32gui, win32ui)
+
 # Firebase dependencies (MVP)
 firebase-admin>=6.2.0  # Firebase Admin SDK for Firestore
 Pyrebase4>=4.7.0  # Firebase client SDK for Authentication
