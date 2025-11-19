@@ -512,28 +512,8 @@ class MonitorTab(QWidget):
         # Add region and create monitor
         self.add_region(region_bbox)
 
-        # Ask if user wants to add more regions
-        reply = QMessageBox.question(
-            self,
-            "Chọn thêm vùng?",
-            f"✓ Đã chọn vùng {len(self.regions)} ({width}x{height})\n\n"
-            "Bạn có muốn chọn thêm vùng nữa không?\n\n"
-            "• Chọn 'Yes' để tiếp tục chọn vùng\n"
-            "• Chọn 'No' để bắt đầu giám sát ngay",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            # Reset selection, allow selecting more regions
-            self.selection_start = None
-            self.selection_current = None
-            # Restore clean preview
-            self.window_preview.setPixmap(self.preview_pixmap)
-            self.status_label.setText(f"Đã chọn {len(self.regions)} vùng - Chọn thêm vùng nữa")
-        else:
-            # Auto-start monitoring
-            self.start_monitoring()
+        # Auto-start monitoring immediately
+        self.start_monitoring()
 
     def add_region(self, region_bbox: Tuple[int, int, int, int]):
         """Thêm region mới vào danh sách"""
@@ -626,9 +606,7 @@ class MonitorTab(QWidget):
             # Hide main window
             self.window().hide()
 
-            # Update floating control
-            if hasattr(self.window(), 'floating_control') and self.window().floating_control:
-                self.window().floating_control.set_monitoring_state(True)
+
 
             # Start monitoring loop
             self._start_monitoring_loop()

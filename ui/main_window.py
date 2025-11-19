@@ -65,11 +65,7 @@ class MainWindow(QMainWindow):
         self.content_stack.addWidget(self.tab_history)
         self.content_stack.addWidget(self.tab_monitor)
 
-        # Create floating control
-        self.floating_control = FloatingControl()
-        self.floating_control.toggle_main_window.connect(self.toggle_visibility)
-        self.floating_control.stop_monitoring.connect(self.tab_monitor.stop_monitoring)
-        self.floating_control.select_new_region.connect(self.tab_monitor.add_new_region)
+
 
         layout.addWidget(self.my_ui_widget)
 

@@ -80,6 +80,14 @@ class FloatingControl(QWidget):
         """Toggle main window visibility"""
         self.toggle_main_window.emit()
 
+    def _on_stop_monitoring(self):
+        """Stop monitoring"""
+        self.stop_monitoring.emit()
+
+    def _on_select_new_region(self):
+        """Select new region"""
+        self.select_new_region.emit()
+
     def mousePressEvent(self, event):
         """Handle mouse press for dragging"""
         if event.button() == Qt.MouseButton.LeftButton:
@@ -99,9 +107,6 @@ class FloatingControl(QWidget):
 
     def set_monitoring_state(self, is_monitoring: bool):
         """Update button states based on monitoring state"""
-        self.stop_btn.setEnabled(is_monitoring)
-        self.new_region_btn.setEnabled(not is_monitoring)
-
         # Show floating control when monitoring starts
         if is_monitoring:
             self.show()
