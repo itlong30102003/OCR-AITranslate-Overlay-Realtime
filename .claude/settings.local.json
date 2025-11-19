@@ -12,7 +12,9 @@
       "Bash(if exist .session del .session)",
       "Bash(dir /b c:UsersADMINMyProjectOCR-AITranslate-Overlay-Realtimeui)",
       "Bash(del:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(dir:*)",
+      "Bash(pip search:*)"
     ],
     "deny": [],
     "ask": []

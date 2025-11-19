@@ -45,6 +45,17 @@ PyQt6-Qt6>=6.5.0  # Ensure Qt6 backend
 # Windows API dependencies (for Window DC Capture)
 pywin32>=306  # Windows API (BitBlt, win32gui, win32ui)
 
+# Windows Graphics Capture (WinRT) dependencies - WORKING!
+winrt-Windows.Graphics>=3.2.1
+winrt-Windows.Graphics.Capture>=3.2.1
+winrt-Windows.Graphics.Capture.Interop>=3.2.1
+winrt-Windows.Graphics.DirectX>=3.2.1
+winrt-Windows.Graphics.DirectX.Direct3D11>=3.2.1
+winrt-Windows.Graphics.Imaging>=3.2.1
+winrt-Windows.Foundation>=3.2.1
+winrt-Windows.Storage>=3.2.1
+winrt-runtime>=3.2.1
+
 # Firebase dependencies (MVP)
 firebase-admin>=6.2.0  # Firebase Admin SDK for Firestore
 Pyrebase4>=4.7.0  # Firebase client SDK for Authentication

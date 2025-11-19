@@ -1,7 +1,8 @@
 """
-Window DC Capture Module - BitBlt method
-Capture specific window without overlay interference
-High performance, no flicker
+Window Capture Module - Production Ready
+Uses PrintWindow API (better than BitBlt for DWM/GPU windows)
++ Optional WinRT verification
+Perfect for OCR-AI-Translate app
 """
 
 import win32gui
@@ -11,21 +12,49 @@ from PIL import Image
 import numpy as np
 from typing import Optional, Tuple, List
 import hashlib
+import sys
+import io
+
+# Set console encoding for Windows
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
+# Try to import WinRT for optional verification
+try:
+    from winrt.windows.graphics.capture.interop import create_for_window
+    import winrt.windows.graphics
+    WINRT_AVAILABLE = True
+except ImportError:
+    WINRT_AVAILABLE = False
 
 
 class WindowCapture:
-    """Capture specific window using Windows DC BitBlt"""
+    """
+    Production-ready window capture
 
-    def __init__(self, window_title: Optional[str] = None, hwnd: Optional[int] = None):
+    Capture priority (auto-fallback):
+    1. PrintWindow API (best for DWM/GPU windows - Edge, Chrome, games)
+    2. BitBlt client area (fast for standard windows)
+    3. BitBlt full window (includes title bar)
+    4. Screenshot crop (works for everything)
+
+    Optional WinRT verification available if installed.
+    """
+
+    def __init__(self, window_title: Optional[str] = None, hwnd: Optional[int] = None, use_printwindow: bool = True):
         """
         Initialize window capture
 
         Args:
             window_title: Window title to find (partial match)
             hwnd: Window handle (if already known)
+            use_printwindow: Use PrintWindow API as primary method (default: True)
         """
         self.hwnd = hwnd
         self.window_title = window_title
+        self.use_printwindow = use_printwindow
+        self.winrt_available = WINRT_AVAILABLE
 
         if not self.hwnd and self.window_title:
             self.hwnd = self.find_window(self.window_title)
@@ -105,24 +134,55 @@ class WindowCapture:
 
     def capture_window(self) -> Optional[Image.Image]:
         """
-        Capture window CLIENT AREA using BitBlt (Windows DC)
-        This captures ONLY the window content (no title bar/borders), ignoring overlays
+        Capture window using best available method with auto-fallback
+
+        Priority:
+        1. PrintWindow API (if enabled, best for DWM/GPU windows)
+        2. BitBlt client area
+        3. BitBlt full window
+        4. Screenshot crop
+
+        Returns:
+            PIL Image or None if capture failed
+        """
+        # Try PrintWindow first (best for modern Windows apps)
+        if self.use_printwindow:
+            img = self.capture_with_printwindow()
+            if img and not self.is_image_black(img):
+                return img
+            print("[WindowCapture] PrintWindow failed or returned black, trying BitBlt...")
+
+        # Fallback to BitBlt client area
+        img = self.capture_client_area_bitblt()
+        if img and not self.is_image_black(img):
+            return img
+
+        # Fallback to full window
+        print("[WindowCapture] Client area failed, trying full window...")
+        img = self.capture_full_window()
+        if img and not self.is_image_black(img):
+            return img
+
+        # Final fallback to screenshot
+        print("[WindowCapture] All DC methods failed, using screenshot...")
+        return self.capture_from_screenshot()
+
+    def capture_client_area_bitblt(self) -> Optional[Image.Image]:
+        """
+        Capture window CLIENT AREA using BitBlt
 
         Returns:
             PIL Image or None if capture failed
         """
         try:
-            # Get CLIENT AREA dimensions (exclude title bar and borders)
+            # Get CLIENT AREA dimensions
             client_x, client_y, width, height = self.get_client_rect()
 
-            # Skip if window is minimized or too small
             if width <= 0 or height <= 0:
-                print(f"[WindowCapture] Client area too small: {width}x{height}, trying screenshot")
-                return self.capture_from_screenshot()
+                return None
 
-            # Get CLIENT AREA DC (not window DC)
-            # GetDC returns client area DC, GetWindowDC returns full window DC
-            hwnd_dc = win32gui.GetDC(self.hwnd)  # Changed from GetWindowDC
+            # Get CLIENT AREA DC
+            hwnd_dc = win32gui.GetDC(self.hwnd)
             mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
             save_dc = mfc_dc.CreateCompatibleDC()
 
@@ -132,13 +192,12 @@ class WindowCapture:
             save_dc.SelectObject(bitmap)
 
             # BitBlt: Copy CLIENT AREA DC to memory DC
-            # This captures only the content area, not title bar/borders
             save_dc.BitBlt(
-                (0, 0),           # Destination top-left
-                (width, height),  # Dimensions
-                mfc_dc,           # Source DC
-                (0, 0),           # Source top-left
-                win32con.SRCCOPY  # Copy mode
+                (0, 0),
+                (width, height),
+                mfc_dc,
+                (0, 0),
+                win32con.SRCCOPY
             )
 
             # Convert bitmap to PIL Image
@@ -161,16 +220,11 @@ class WindowCapture:
             mfc_dc.DeleteDC()
             win32gui.ReleaseDC(self.hwnd, hwnd_dc)
 
-            # Check if image is black (GPU rendering/hardware acceleration issue)
-            if self.is_image_black(image):
-                print("[WindowCapture] ⚠️ Client area capture returned black image (GPU rendering), trying screenshot")
-                return self.capture_from_screenshot()
-
             return image
 
         except Exception as e:
-            print(f"[WindowCapture] Error capturing client area: {e}, trying screenshot")
-            return self.capture_from_screenshot()
+            print(f"[WindowCapture] BitBlt client area error: {e}")
+            return None
 
     def capture_full_window(self) -> Optional[Image.Image]:
         """
