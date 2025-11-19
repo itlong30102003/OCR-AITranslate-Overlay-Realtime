@@ -187,11 +187,16 @@ class FirebaseAuthService:
         try:
             # Firebase REST API automatically sends password reset email
             self.auth_client.send_password_reset_email(email)
+
             print(f"[Auth] Password reset email sent to: {email}")
+            print(f"[Auth] ⚠️  Check email inbox and SPAM folder")
+
             return {"success": True, "message": "Password reset email sent"}
 
         except Exception as e:
             error_msg = str(e)
+            print(f"[Auth] ERROR sending password reset email: {error_msg}")
+
             if "EMAIL_NOT_FOUND" in error_msg:
                 raise Exception("Email không tồn tại trong hệ thống")
             elif "INVALID_EMAIL" in error_msg:

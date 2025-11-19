@@ -11,7 +11,8 @@
       "Bash(timeout:*)",
       "Bash(if exist .session del .session)",
       "Bash(dir /b c:UsersADMINMyProjectOCR-AITranslate-Overlay-Realtimeui)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []

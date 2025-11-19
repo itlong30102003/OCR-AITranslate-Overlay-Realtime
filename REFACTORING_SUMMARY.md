@@ -2,7 +2,13 @@
 
 ## ✅ Hoàn thành
 
-Refactor thành công Login Window từ 1322 dòng xuống còn **194 dòng** (giảm 85%).
+Refactor thành công Login Window từ **1322 dòng** xuống còn **194 dòng** (giảm 85%).
+
+**Tất cả tính năng hoạt động hoàn hảo**:
+- ✅ Welcome screen
+- ✅ Login form
+- ✅ Register form
+- ✅ Forgot password (email gửi đến SPAM folder - đây là normal với Firebase default domain)
 
 ## 📂 Cấu trúc mới
 
@@ -33,6 +39,12 @@ ui/
 - ✅ Có thể kéo di chuyển dialog
 - ✅ Tích hợp Firebase password reset email
 - ✅ Hand cursor + hover effects cho button
+
+**📧 Lưu ý về Email**:
+- Email reset password từ Firebase thường **rơi vào SPAM folder**
+- Đây là normal vì Firebase dùng domain mặc định: `noreply@<project>.firebaseapp.com`
+- Nếu muốn email vào inbox: cần setup custom domain & verify trong Firebase Console
+- Email có thể mất 1-5 phút để đến
 
 ### Welcome Screen
 - ✅ App branding với logo
