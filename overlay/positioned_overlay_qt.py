@@ -23,6 +23,8 @@ class RegionOverlay(QWidget):
         super().__init__(parent)
         self.region_boxes = region_boxes  # List of TranslatedTextBox for this region
         self.device_pixel_ratio = device_pixel_ratio
+        self.position_timer = QTimer(self)
+        self.position_timer.timeout.connect(self.update_position)
         self.setup_ui()
 
     def setup_ui(self):
@@ -63,6 +65,32 @@ class RegionOverlay(QWidget):
 
         # Set geometry to cover entire region
         self.setGeometry(x1, y1, self.width, self.height)
+
+        # Start position tracking timer (60 FPS)
+        self.position_timer.start(1000 // 60)  # ~16.67ms
+
+    def update_position(self):
+        """Update overlay position to track window movement"""
+        if not self.region_boxes:
+            return
+
+        # Get current region coordinates from first box
+        first_box = self.region_boxes[0]
+        phys_x1, phys_y1, phys_x2, phys_y2 = first_box.region_coords
+
+        # Convert to logical coordinates
+        x1 = int(phys_x1 / self.device_pixel_ratio)
+        y1 = int(phys_y1 / self.device_pixel_ratio)
+        x2 = int(phys_x2 / self.device_pixel_ratio)
+        y2 = int(phys_y2 / self.device_pixel_ratio)
+
+        # Update position if changed
+        if x1 != self.region_x or y1 != self.region_y:
+            self.region_x = x1
+            self.region_y = y1
+            self.setGeometry(x1, y1, self.width, self.height)
+            # Trigger repaint to update text positions
+            self.update()
 
     def paintEvent(self, _event):
         """Custom paint event - draw individual text boxes with their own backgrounds (subtitle style)"""

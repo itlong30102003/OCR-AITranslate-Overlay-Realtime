@@ -43,6 +43,8 @@ class WindowRegionSelector:
         # Create Tkinter window for selection
         root = tk.Tk()
         root.title("Select Region - Click and drag to select area")
+        root.attributes('-topmost', True)  # Make window always on top
+        root.lift()  # Bring to front
 
         # Get window info
         hwnd = self.window_capture.hwnd

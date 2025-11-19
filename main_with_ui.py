@@ -1,11 +1,30 @@
 """Main Entry Point with Firebase UI Integration"""
 
 import sys
+import os
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt
 from typing import Optional
 from PIL import Image
+import ctypes
 
-# Create QApplication FIRST
+# IMPORTANT: Enable High DPI scaling BEFORE creating QApplication
+# This fixes DPI scaling issues on Windows
+
+# Method 1: Windows native DPI awareness
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+except:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()  # Fallback for older Windows
+    except:
+        pass
+
+# Method 2: Qt High DPI support
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
+# Create QApplication
 app = QApplication(sys.argv)
 
 from capture.screen_capture_integrated import IntegratedScreenCapture
@@ -35,7 +54,7 @@ class OCRTranslationApp:
         self.user_id = user_id
 
         # Get overlay mode from config (default: "positioned")
-        overlay_mode = self.config.get('overlay_mode', 'positioned')
+        overlay_mode = self.config.get('overlay_display', 'positioned')
         if overlay_mode not in ['list', 'positioned']:
             overlay_mode = 'positioned'
 
@@ -77,8 +96,10 @@ class OCRTranslationApp:
             self.sync_service.start()  # Start background batch sync
             print("[INFO] Local history and batch sync services initialized")
 
-        # Integrated screen capture (will be initialized when monitoring starts)
-        self.integrated_capture = None
+        # Window capture monitor (will be initialized when monitoring starts)
+        self.window_monitor = None
+        self.selected_hwnd = None
+        self.selected_window_title = None
 
         print("[INFO] OCR Translation App initialized")
         print(f"[INFO] Translation available: {self.translation_service.is_available()}")
@@ -132,7 +153,7 @@ class OCRTranslationApp:
         print(f"[App] Overlay mode changed successfully to: {mode}")
 
     def start_capture(self):
-        """Start screen capture and monitoring"""
+        """Start window capture and monitoring"""
         if not self.translation_service.is_available():
             print("[WARNING] Translation system not available, running OCR only")
 
@@ -148,8 +169,8 @@ class OCRTranslationApp:
 
         print(f"[INFO] Overlay mode: {overlay_mode} -> Scan mode: {scan_mode}")
 
-        # Note: Integrated capture is now handled by the MonitorTab in the UI
-        # The tab will create its own IntegratedScreenCapture instance
+        # Note: Window capture is now handled by the MonitorTab in the UI
+        # The tab will create its own WindowRegionMonitor instance
         print(f"[INFO] Capture mode delegated to MonitorTab ({scan_mode} mode)")
 
 

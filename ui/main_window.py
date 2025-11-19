@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         self.floating_control = FloatingControl()
         self.floating_control.toggle_main_window.connect(self.toggle_visibility)
         self.floating_control.stop_monitoring.connect(self.tab_monitor.stop_monitoring)
-        self.floating_control.select_new_region.connect(self.tab_monitor.select_region)
+        self.floating_control.select_new_region.connect(self.tab_monitor.add_new_region)
 
         layout.addWidget(self.my_ui_widget)
 
@@ -103,6 +103,10 @@ class MainWindow(QMainWindow):
         self.toggle_ui_btn.show()
         self.toggle_ui_btn.raise_()
         self.toggle_ui_btn.activateWindow()
+
+        # Make main window draggable
+        self.dragging = False
+        self.offset = None
 
         # Make toggle button draggable
         self.toggle_dragging = False

@@ -60,30 +60,44 @@ class WindowCapture:
         return None
 
     def get_window_rect(self) -> Tuple[int, int, int, int]:
-        """Get window rectangle (x, y, width, height)"""
+        """Get window rectangle (x, y, width, height) in screen coordinates"""
         left, top, right, bottom = win32gui.GetWindowRect(self.hwnd)
         width = right - left
         height = bottom - top
         return left, top, width, height
 
+    def get_client_rect(self) -> Tuple[int, int, int, int]:
+        """Get client area rectangle (x, y, width, height) in screen coordinates"""
+        # Get client area size
+        client_rect = win32gui.GetClientRect(self.hwnd)
+        client_width = client_rect[2]
+        client_height = client_rect[3]
+
+        # Convert client area top-left to screen coordinates
+        client_pos = win32gui.ClientToScreen(self.hwnd, (0, 0))
+        client_x, client_y = client_pos
+
+        return client_x, client_y, client_width, client_height
+
     def capture_window(self) -> Optional[Image.Image]:
         """
-        Capture window using BitBlt (Windows DC)
-        This captures ONLY the window content, ignoring overlays
+        Capture window CLIENT AREA using BitBlt (Windows DC)
+        This captures ONLY the window content (no title bar/borders), ignoring overlays
 
         Returns:
             PIL Image or None if capture failed
         """
         try:
-            # Get window dimensions
-            left, top, width, height = self.get_window_rect()
+            # Get CLIENT AREA dimensions (exclude title bar and borders)
+            client_x, client_y, width, height = self.get_client_rect()
 
             # Skip if window is minimized or too small
             if width <= 0 or height <= 0:
                 return None
 
-            # Get window DC
-            hwnd_dc = win32gui.GetWindowDC(self.hwnd)
+            # Get CLIENT AREA DC (not window DC)
+            # GetDC returns client area DC, GetWindowDC returns full window DC
+            hwnd_dc = win32gui.GetDC(self.hwnd)  # Changed from GetWindowDC
             mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
             save_dc = mfc_dc.CreateCompatibleDC()
 
@@ -92,9 +106,8 @@ class WindowCapture:
             bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
             save_dc.SelectObject(bitmap)
 
-            # BitBlt: Copy window DC to memory DC
-            # This is the KEY: BitBlt captures window content directly
-            # without overlay interference!
+            # BitBlt: Copy CLIENT AREA DC to memory DC
+            # This captures only the content area, not title bar/borders
             save_dc.BitBlt(
                 (0, 0),           # Destination top-left
                 (width, height),  # Dimensions
@@ -302,14 +315,17 @@ class WindowRegionMonitor:
             (x, y, width, height) in screen coordinates
         """
         if not self.region_bbox:
-            return self.window_capture.get_window_rect()
+            # Return full client area
+            return self.window_capture.get_client_rect()
 
-        win_x, win_y, win_w, win_h = self.window_capture.get_window_rect()
+        # Use CLIENT AREA coordinates (not window rect)
+        client_x, client_y, client_w, client_h = self.window_capture.get_client_rect()
         reg_x, reg_y, reg_w, reg_h = self.region_bbox
 
-        # Convert to absolute screen coordinates
-        abs_x = win_x + reg_x
-        abs_y = win_y + reg_y
+        # Convert region bbox to absolute screen coordinates
+        # Region bbox is relative to client area top-left
+        abs_x = client_x + reg_x
+        abs_y = client_y + reg_y
 
         return abs_x, abs_y, reg_w, reg_h
 

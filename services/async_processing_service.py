@@ -184,11 +184,8 @@ class AsyncProcessingService:
             if self.overlay_mode == "positioned":
                 self.overlay_service.clear_positioned_overlay()
 
-            # Branch based on overlay mode
-            if self.overlay_mode == "positioned":
-                await self._process_region_positioned(region_idx, img, scan_counter, region_coords)
-            else:
-                await self._process_region_list(region_idx, img, scan_counter)
+            # Only positioned mode supported now
+            await self._process_region_positioned(region_idx, img, scan_counter, region_coords)
 
         except Exception as e:
             print(f"[Async Processing Service] Error processing region {region_idx}: {e}")
