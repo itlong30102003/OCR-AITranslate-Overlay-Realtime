@@ -9,7 +9,7 @@
       "Bash(pip uninstall:*)",
       "Bash(pip install:*)",
       "Bash(timeout:*)",
-      "Bash(nul)"
+      "Bash(if exist .session del .session)"
     ],
     "deny": [],
     "ask": []

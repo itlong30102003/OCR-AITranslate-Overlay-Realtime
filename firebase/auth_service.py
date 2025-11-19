@@ -107,8 +107,22 @@ class FirebaseAuthService:
         try:
             # Try to refresh token
             user = self.auth_client.refresh(session['refreshToken'])
+
+            # Refresh response doesn't have localId, so add it from saved session
+            if 'localId' not in user and 'userId' in session:
+                user['localId'] = session['userId']
+
+            # Add email from session if missing in refresh response
+            if 'email' not in user:
+                user['email'] = session.get('email', '')
+
+            # Validate essential fields
+            if not user.get('email') or not user.get('localId'):
+                self._clear_session()
+                return None
+
             self._save_session(user)
-            print(f"[Auth] Session restored for: {user['email']}")
+            print(f"[Auth] Session restored for: {user.get('email', 'unknown')}")
             return user
         except:
             # Token expired or invalid
@@ -118,8 +132,11 @@ class FirebaseAuthService:
     def _save_session(self, user):
         """Save user session to file"""
         try:
+            # Handle both login response (has localId) and refresh response (has userId)
+            user_id = user.get('localId') or user.get('userId') or user.get('user_id')
+
             session_data = {
-                'userId': user['localId'],
+                'userId': user_id,
                 'email': user.get('email', ''),
                 'idToken': user['idToken'],
                 'refreshToken': user['refreshToken']
@@ -153,3 +170,31 @@ class FirebaseAuthService:
     def is_logged_in(self):
         """Check if user is currently logged in"""
         return self.get_current_user() is not None
+
+    def send_password_reset_email(self, email):
+        """
+        Send password reset email to user
+
+        Args:
+            email: User email address
+
+        Returns:
+            dict: Success response
+
+        Raises:
+            Exception: If email sending fails
+        """
+        try:
+            # Firebase REST API automatically sends password reset email
+            self.auth_client.send_password_reset_email(email)
+            print(f"[Auth] Password reset email sent to: {email}")
+            return {"success": True, "message": "Password reset email sent"}
+
+        except Exception as e:
+            error_msg = str(e)
+            if "EMAIL_NOT_FOUND" in error_msg:
+                raise Exception("Email không tồn tại trong hệ thống")
+            elif "INVALID_EMAIL" in error_msg:
+                raise Exception("Email không hợp lệ")
+            else:
+                raise Exception(f"Không thể gửi email: {error_msg}")

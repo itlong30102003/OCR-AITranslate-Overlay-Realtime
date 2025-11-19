@@ -372,9 +372,22 @@ class LoginWindow(QWidget):
         """)
         forgot_btn.clicked.connect(self.forgot_password)
         form_layout.addWidget(forgot_btn, alignment=Qt.AlignmentFlag.AlignRight)
-
-        form_layout.addSpacing(10)
-
+        
+        form_layout.addSpacing(5)
+        # Status message label (always visible)
+        self.login_status_label = QLabel("")
+        self.login_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.login_status_label.setWordWrap(True)
+        self.login_status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.text_secondary};
+                font-size: 12px;
+            }}
+        """)
+        self.login_status_label.hide()  # Always visible
+        form_layout.addWidget(self.login_status_label)
+        
+        form_layout.addSpacing(5)
         # Login button
         self.login_btn = QPushButton("ĐĂNG NHẬP")
         self.login_btn.setStyleSheet(f"""
@@ -382,7 +395,7 @@ class LoginWindow(QWidget):
                 background-color: {self.primary_blue};
                 color: white;
                 border: none;
-                padding: 14px;
+                margin: 14px;
                 border-radius: 12px;
                 font-size: 16px;
                 font-weight: bold;
@@ -674,6 +687,22 @@ class LoginWindow(QWidget):
 
         form_layout.addSpacing(5)
 
+        # Status message label (hidden initially)
+        self.register_status_label = QLabel("")
+        self.register_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.register_status_label.setWordWrap(True)
+        self.register_status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.text_secondary};
+                font-size: 12px;
+                padding: 4px;
+            }}
+        """)
+        self.register_status_label.hide()  # Hidden initially
+        form_layout.addWidget(self.register_status_label)
+
+        form_layout.addSpacing(5)
+
         # Terms checkbox
         self.terms_check = QCheckBox("Tôi đồng ý với Điều khoản và Điều kiện")
         self.terms_check.setStyleSheet(f"""
@@ -832,25 +861,113 @@ class LoginWindow(QWidget):
         email = self.email_input.text().strip()
         password = self.password_input.text()
 
+        # Hide previous status message
+        self.login_status_label.hide()
+
         if not email or not password:
-            self.show_message("Lỗi", "Vui lòng nhập đầy đủ thông tin!", "error")
+            self.show_login_status("Vui lòng nhập đầy đủ thông tin!", "error")
             return
 
         try:
             # Disable button during login
             self.login_btn.setEnabled(False)
             self.login_btn.setText("Đang đăng nhập...")
+            self.login_status_label.setText("Đang đăng nhập...")
 
             user = self.auth_service.login(email, password)
 
             # Success
-            self.show_message("Thành công", f"Đăng nhập thành công!\nXin chào, {email}!", "success")
-            self.login_successful.emit(user)
+            self.show_login_status(f"✓ Đăng nhập thành công! Xin chào, {email.split('@')[0]}!", "success")
+
+            # Emit signal after a short delay to show success message
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(800, lambda: self.login_successful.emit(user))
 
         except Exception as e:
-            self.show_message("Lỗi đăng nhập", str(e), "error")
+            error_message = str(e)
+            if "Invalid email or password" in error_message:
+                self.show_login_status("✗ Email hoặc mật khẩu không đúng!", "error")
+            elif "network" in error_message.lower():
+                self.show_login_status("✗ Lỗi kết nối mạng. Vui lòng kiểm tra internet!", "error")
+            else:
+                self.show_login_status(f"✗ Lỗi: {error_message}", "error")
+
             self.login_btn.setEnabled(True)
             self.login_btn.setText("ĐĂNG NHẬP")
+
+    def show_login_status(self, message, status_type="error"):
+        """
+        Show status message above login button
+
+        Args:
+            message: Message to display
+            status_type: "error" or "success"
+        """
+        self.login_status_label.setText(message)
+
+        if status_type == "success":
+            self.login_status_label.setStyleSheet(f"""
+                QLabel {{
+                    color: #10b981;
+                    font-size: 12px;
+                    padding: 4px;
+                }}
+            """)
+        else:  # error
+            self.login_status_label.setStyleSheet(f"""
+                QLabel {{
+                    color: #ef4444;
+                    font-size: 12px;
+                    padding: 4px;
+                }}
+            """)
+
+        self.login_status_label.show()
+
+        # Hide after showing status
+        if status_type == "success":
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(3000, self.login_status_label.hide)
+        elif status_type == "error":
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(4000, self.login_status_label.hide)
+
+    def show_register_status(self, message, status_type="error"):
+        """
+        Show status message for register
+
+        Args:
+            message: Message to display
+            status_type: "error" or "success"
+        """
+        self.register_status_label.setText(message)
+
+        if status_type == "success":
+            self.register_status_label.setStyleSheet(f"""
+                QLabel {{
+                    color: #10b981;
+                    font-size: 12px;
+                    padding: 4px;
+                }}
+            """)
+        else:  # error
+            self.register_status_label.setStyleSheet(f"""
+                QLabel {{
+                    color: #ef4444;
+                    font-size: 12px;
+                    padding: 4px;
+                }}
+            """)
+
+        self.register_status_label.show()
+
+        # Hide after showing status
+        if status_type == "success":
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(3000, self.register_status_label.hide)
+        elif status_type == "error":
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(4000, self.register_status_label.hide)
 
     def handle_register(self):
         """Handle register button click"""
@@ -862,19 +979,19 @@ class LoginWindow(QWidget):
 
         # Validation
         if not all([fullname, email, username, password, confirm_password]):
-            self.show_message("Lỗi", "Vui lòng nhập đầy đủ thông tin!", "error")
+            self.show_register_status("Thất bại: Vui lòng nhập đầy đủ thông tin!", "error")
             return
 
         if password != confirm_password:
-            self.show_message("Lỗi", "Mật khẩu xác nhận không khớp!", "error")
+            self.show_register_status("Thất bại: Mật khẩu xác nhận không khớp!", "error")
             return
 
         if len(password) < 6:
-            self.show_message("Lỗi", "Mật khẩu phải có ít nhất 6 ký tự!", "error")
+            self.show_register_status("Thất bại: Mật khẩu phải có ít nhất 6 ký tự!", "error")
             return
 
         if not self.terms_check.isChecked():
-            self.show_message("Lỗi", "Vui lòng đồng ý với Điều khoản và Điều kiện!", "error")
+            self.show_register_status("Thất bại: Vui lòng đồng ý với Điều khoản và Điều kiện!", "error")
             return
 
         try:
@@ -885,26 +1002,231 @@ class LoginWindow(QWidget):
             self.auth_service.register(email, password)
 
             # Success
-            self.show_message(
-                "Thành công",
-                f"Đăng ký thành công!\nChào mừng, {fullname}!",
-                "success"
-            )
-            # Go back to login view
-            self.show_login_view()
+            self.show_register_status(f"Đăng ký thành công với {email}!", "success")
+
+            # Go back to login view after a delay
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(2000, self.show_login_view)
 
         except Exception as e:
-            self.show_message("Lỗi đăng ký", str(e), "error")
+            error_message = str(e)
+            if "email already exists" in error_message.lower():
+                self.show_register_status("Thất bại: Email đã được sử dụng!", "error")
+            elif "network" in error_message.lower():
+                self.show_register_status("Thất bại: Lỗi kết nối mạng!", "error")
+            else:
+                self.show_register_status(f"Thất bại: {error_message}", "error")
+
             self.register_btn.setEnabled(True)
             self.register_btn.setText("ĐĂNG KÝ")
 
     def forgot_password(self):
         """Handle forgot password"""
-        self.show_message(
-            "Quên mật khẩu",
-            "Chức năng đang được phát triển!\nVui lòng liên hệ hỗ trợ qua SĐT: 0123 456 789",
-            "info"
-        )
+        self.show_forgot_password_dialog()
+
+    def show_forgot_password_dialog(self):
+        """Show forgot password dialog"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Quên mật khẩu")
+        dialog.setFixedSize(450, 320)
+        dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {self.container_color};
+                border-radius: 15px;
+                border: 2px solid {self.primary_blue};
+            }}
+        """)
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(15)
+
+        # Title
+        title_label = QLabel("🔐 Quên mật khẩu")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet(f"""
+            font-size: 22px;
+            font-weight: bold;
+            color: {self.text_color};
+        """)
+        layout.addWidget(title_label)
+
+        # Description
+        desc_label = QLabel("Nhập email của bạn để nhận liên kết đặt lại mật khẩu")
+        desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet(f"""
+            font-size: 13px;
+            color: {self.text_secondary};
+            padding: 5px 10px;
+        """)
+        layout.addWidget(desc_label)
+
+        layout.addSpacing(10)
+
+        # Email label
+        email_label = QLabel("Email")
+        email_label.setStyleSheet(f"color: {self.text_secondary}; font-size: 12px;")
+        layout.addWidget(email_label)
+
+        # Email input
+        email_input = QLineEdit()
+        email_input.setPlaceholderText("Nhập email của bạn")
+        email_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {self.input_bg};
+                border: none;
+                border-radius: 10px;
+                padding: 12px;
+                color: {self.text_color};
+                font-size: 14px;
+                min-height: 45px;
+            }}
+            QLineEdit:focus {{
+                background-color: #353a4d;
+            }}
+        """)
+        layout.addWidget(email_input)
+
+        # Status label
+        status_label = QLabel("")
+        status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_label.setWordWrap(True)
+        status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.text_secondary};
+                font-size: 12px;
+                padding: 4px;
+            }}
+        """)
+        status_label.hide()
+        layout.addWidget(status_label)
+
+        layout.addSpacing(10)
+
+        # Buttons layout
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        # Cancel button
+        cancel_btn = QPushButton("Hủy")
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {self.text_secondary};
+                border: 2px solid {self.text_secondary};
+                padding: 12px;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 120px;
+                min-height: 45px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(156, 163, 175, 0.1);
+                border-color: {self.text_color};
+                color: {self.text_color};
+            }}
+        """)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        # Send button
+        send_btn = QPushButton("Gửi email")
+        send_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.primary_blue};
+                color: white;
+                border: none;
+                padding: 12px;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 120px;
+                min-height: 45px;
+            }}
+            QPushButton:hover {{
+                background-color: #2563eb;
+            }}
+            QPushButton:pressed {{
+                background-color: #1d4ed8;
+            }}
+        """)
+
+        def send_reset_email():
+            email = email_input.text().strip()
+
+            if not email:
+                status_label.setText("⚠️ Vui lòng nhập email!")
+                status_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: #ef4444;
+                        font-size: 12px;
+                        padding: 4px;
+                    }}
+                """)
+                status_label.show()
+                return
+
+            try:
+                # Disable button during sending
+                send_btn.setEnabled(False)
+                send_btn.setText("Đang gửi...")
+                status_label.setText("Đang gửi email...")
+                status_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: {self.text_secondary};
+                        font-size: 12px;
+                        padding: 4px;
+                    }}
+                """)
+                status_label.show()
+
+                # Send reset email
+                self.auth_service.send_password_reset_email(email)
+
+                # Success
+                status_label.setText("✅ Email đã được gửi! Vui lòng kiểm tra hộp thư.")
+                status_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: #10b981;
+                        font-size: 12px;
+                        padding: 4px;
+                    }}
+                """)
+                status_label.show()
+
+                # Close dialog after delay
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(2000, dialog.accept)
+
+            except Exception as e:
+                error_message = str(e)
+                status_label.setText(f"❌ {error_message}")
+                status_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: #ef4444;
+                        font-size: 12px;
+                        padding: 4px;
+                    }}
+                """)
+                status_label.show()
+
+                send_btn.setEnabled(True)
+                send_btn.setText("Gửi email")
+
+        send_btn.clicked.connect(send_reset_email)
+        btn_layout.addWidget(send_btn)
+
+        layout.addLayout(btn_layout)
+
+        # Set focus to email input
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(100, lambda: email_input.setFocus())
+
+        dialog.exec()
 
     def show_message(self, title, message, msg_type="info"):
         """Show custom message dialog with icons"""
