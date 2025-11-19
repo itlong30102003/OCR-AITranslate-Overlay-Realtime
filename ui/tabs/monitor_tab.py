@@ -82,15 +82,42 @@ class MonitorTab(QWidget):
         self.region_widgets: List[RegionThumbnail] = []
         self.scan_counter = 0
 
+        # Store latest captured images for thumbnail updates
+        self.latest_region_images: List[Optional[Image.Image]] = []
+
         # Monitoring state
         self.is_monitoring = False
         self.monitoring_thread = None
+
+        # Thumbnail update timer (runs in main thread)
+        self.thumbnail_update_timer = QTimer()
+        self.thumbnail_update_timer.timeout.connect(self._update_thumbnails)
+        self.thumbnail_update_timer.setInterval(100)  # Update every 100ms
 
         self.init_ui()
 
     def init_ui(self):
         """Khởi tạo UI đơn giản"""
-        layout = QVBoxLayout(self)
+        # Main layout for the tab (contains scroll area)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Create scroll area for all content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: transparent;
+            }
+        """)
+
+        # Create container widget for scrollable content
+        scroll_content = QWidget()
+        layout = QVBoxLayout(scroll_content)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
@@ -306,6 +333,10 @@ class MonitorTab(QWidget):
 
         layout.addStretch()
 
+        # Set scroll content and add to main layout
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area)
+
         # Connect combo box to enable continue button
         self.window_combo.currentIndexChanged.connect(self.on_window_combo_changed)
 
@@ -322,11 +353,42 @@ class MonitorTab(QWidget):
                 self.window_combo.addItem("Không tìm thấy cửa sổ nào")
                 return
 
+            # Filter out system windows and common invisible windows
+            filtered_windows = []
+            ignore_keywords = [
+                "Program Manager",
+                "Windows Input Experience",
+                "Microsoft Text Input Application",
+                "Settings",
+                "MSCTFIME UI",
+                "Default IME",
+                "OleMainThreadWndName"
+            ]
+
             for hwnd, title in windows:
+                # Skip empty or very short titles
+                if not title or len(title) < 2:
+                    continue
+
+                # Skip windows with ignore keywords
+                if any(keyword.lower() in title.lower() for keyword in ignore_keywords):
+                    continue
+
+                # Skip our own application
+                if "OCR" in title and "Translate" in title:
+                    continue
+
+                filtered_windows.append((hwnd, title))
+
+            if not filtered_windows:
+                self.window_combo.addItem("Không tìm thấy cửa sổ phù hợp")
+                return
+
+            for hwnd, title in filtered_windows:
                 display_title = title[:60] + "..." if len(title) > 60 else title
                 self.window_combo.addItem(f"{display_title}", (hwnd, title))
 
-            print(f"[MonitorTab] Refreshed window list: {len(windows)} windows found")
+            print(f"[MonitorTab] Refreshed window list: {len(filtered_windows)}/{len(windows)} windows")
 
         except Exception as e:
             print(f"[MonitorTab] Error refreshing window list: {e}")
@@ -403,11 +465,78 @@ class MonitorTab(QWidget):
 
             print(f"[MonitorTab] Capturing window preview for hwnd: {self.selected_hwnd}")
 
-            window_capture = WindowCapture(hwnd=self.selected_hwnd)
-            pil_image = window_capture.capture_window()
+            # Try to restore window if minimized
+            import win32gui
+            import win32con
+            import time
+
+            # Get window info for debugging
+            window_text = win32gui.GetWindowText(self.selected_hwnd)
+            print(f"[MonitorTab] Target window: {window_text}")
+
+            # Check if window is minimized
+            placement = win32gui.GetWindowPlacement(self.selected_hwnd)
+            if placement[1] == win32con.SW_SHOWMINIMIZED:
+                print("[MonitorTab] Window is minimized, attempting to restore...")
+                # Restore window but don't activate/focus it
+                win32gui.ShowWindow(self.selected_hwnd, win32con.SW_RESTORE)
+                time.sleep(0.3)  # Wait for restore
+
+            # Make sure window is visible
+            if not win32gui.IsWindowVisible(self.selected_hwnd):
+                print("[MonitorTab] Window is not visible, showing it...")
+                win32gui.ShowWindow(self.selected_hwnd, win32con.SW_SHOW)
+                time.sleep(0.3)
+
+            # IMPORTANT: Hide our app window temporarily to avoid capturing it in the screenshot
+            print("[MonitorTab] Hiding app window to avoid capture interference...")
+            main_window = self.window()
+            was_visible = main_window.isVisible()
+            if was_visible:
+                main_window.hide()
+                time.sleep(0.2)  # Wait for window to disappear
+
+            try:
+                # Capture window (will try all methods with automatic fallback)
+                window_capture = WindowCapture(hwnd=self.selected_hwnd)
+                pil_image = window_capture.capture_window()
+            finally:
+                # Always restore app window visibility
+                if was_visible:
+                    main_window.show()
+                    main_window.raise_()
+                    print("[MonitorTab] App window restored")
 
             if not pil_image:
-                self.window_preview.setText("Không thể capture cửa sổ\n(Window có thể đang bị minimize)")
+                # ALL capture methods failed - show detailed error
+                try:
+                    rect = win32gui.GetWindowRect(self.selected_hwnd)
+                    client_rect = win32gui.GetClientRect(self.selected_hwnd)
+                    window_text = win32gui.GetWindowText(self.selected_hwnd)
+                    is_visible = win32gui.IsWindowVisible(self.selected_hwnd)
+
+                    error_msg = f"❌ Không thể capture: {window_text}\n\n"
+                    error_msg += f"🔍 Thông tin window:\n"
+                    error_msg += f"• Visible: {is_visible}\n"
+                    error_msg += f"• Window size: {rect[2]-rect[0]}x{rect[3]-rect[1]}\n"
+                    error_msg += f"• Client size: {client_rect[2]}x{client_rect[3]}\n\n"
+                    error_msg += "🚫 Đã thử 4 phương thức capture:\n"
+                    error_msg += "• Client Area (BitBlt) - Failed\n"
+                    error_msg += "• Full Window (GetWindowDC) - Failed\n"
+                    error_msg += "• PrintWindow API - Failed\n"
+                    error_msg += "• Screenshot & Crop - Failed\n\n"
+                    error_msg += "💡 Window này có thể:\n"
+                    error_msg += "• Bị hidden hoàn toàn (không visible trên màn hình)\n"
+                    error_msg += "• Có size = 0 (minimized or off-screen)\n"
+                    error_msg += "• Được bảo vệ đặc biệt\n\n"
+                    error_msg += "Hãy thử:\n"
+                    error_msg += "1. Maximize window đó\n"
+                    error_msg += "2. Đưa window lên foreground\n"
+                    error_msg += "3. Click nút 'Làm mới' và chọn lại"
+                except Exception as e:
+                    error_msg = f"❌ Lỗi nghiêm trọng\n\nKhông thể capture window.\nLỗi: {str(e)}"
+
+                self.window_preview.setText(error_msg)
                 self.window_preview.setStyleSheet("""
                     QLabel {
                         border: 2px solid #ef4444;
@@ -415,12 +544,29 @@ class MonitorTab(QWidget):
                         background-color: #1f2937;
                         min-height: 300px;
                         color: #ef4444;
+                        font-size: 10px;
+                        padding: 20px;
                     }
                 """)
+                print(f"[MonitorTab] All capture methods failed!")
+                print(f"[MonitorTab] {error_msg}")
+
+                # Re-enable continue button to allow retry
+                self.continue_btn.setEnabled(True)
+                self.continue_btn.setText("🔄 Thử lại")
                 return
 
             # Store original image
             self.original_window_image = pil_image.copy()
+
+            # DEBUG: Save original image to verify capture works
+            try:
+                import os
+                debug_path = os.path.join(os.getcwd(), "debug_capture.png")
+                pil_image.save(debug_path)
+                print(f"[MonitorTab] DEBUG: Saved captured image to {debug_path}")
+            except Exception as save_err:
+                print(f"[MonitorTab] DEBUG: Could not save debug image: {save_err}")
 
             # Convert to RGB
             if pil_image.mode != 'RGB':
@@ -438,10 +584,28 @@ class MonitorTab(QWidget):
             # Resize for display
             pil_image = pil_image.resize((display_width, display_height), Image.Resampling.LANCZOS)
 
-            # Convert to QPixmap
+            # Convert to QPixmap with correct stride
             img_data = pil_image.tobytes('raw', 'RGB')
-            qimage = QImage(img_data, pil_image.width, pil_image.height, QImage.Format.Format_RGB888)
+            bytes_per_line = pil_image.width * 3  # RGB = 3 bytes per pixel
+            qimage = QImage(img_data, pil_image.width, pil_image.height, bytes_per_line, QImage.Format.Format_RGB888)
+
+            # Check if QImage is valid
+            if qimage.isNull():
+                print("[MonitorTab] ERROR: QImage is null!")
+                return
+
+            # Make a deep copy to ensure data persists
+            qimage = qimage.copy()
+
             self.preview_pixmap = QPixmap.fromImage(qimage)
+
+            # Check if QPixmap is valid
+            if self.preview_pixmap.isNull():
+                print("[MonitorTab] ERROR: QPixmap is null!")
+                return
+
+            print(f"[MonitorTab] QImage created: {qimage.width()}x{qimage.height()}, format: {qimage.format()}")
+            print(f"[MonitorTab] QPixmap created: {self.preview_pixmap.width()}x{self.preview_pixmap.height()}")
 
             # Display preview
             self.window_preview.setText("")
@@ -452,10 +616,33 @@ class MonitorTab(QWidget):
                     background-color: #1f2937;
                 }
             """)
-            self.window_preview.setPixmap(self.preview_pixmap)
-            self.window_preview.setFixedSize(display_width, display_height)
 
-            print(f"[MonitorTab] Preview updated successfully: {img_width}x{img_height} -> {display_width}x{display_height}")
+            # Set pixmap and size
+            print(f"[MonitorTab] Setting pixmap to QLabel...")
+            self.window_preview.setPixmap(self.preview_pixmap)
+            print(f"[MonitorTab] Pixmap set. Has pixmap: {not self.window_preview.pixmap().isNull()}")
+
+            self.window_preview.setMinimumSize(display_width, display_height)
+            self.window_preview.setMaximumSize(display_width, display_height)
+            self.window_preview.resize(display_width, display_height)
+
+            # Force update geometry
+            self.window_preview.updateGeometry()
+            self.window_preview.update()
+
+            # Make sure it's visible
+            self.window_preview.setVisible(True)
+            self.window_preview.show()
+
+            print(f"[MonitorTab] QLabel visible: {self.window_preview.isVisible()}")
+            print(f"[MonitorTab] QLabel size: {self.window_preview.size()}")
+            print(f"[MonitorTab] QLabel geometry: {self.window_preview.geometry()}")
+            print(f"[MonitorTab] Preview section visible: {self.preview_section.isVisible()}")
+
+            # Reset continue button text (in case it was "Thử lại")
+            self.continue_btn.setText("▶️ Tiếp tục")
+
+            print(f"[MonitorTab] ✅ Preview updated successfully: {img_width}x{img_height} -> {display_width}x{display_height}")
 
         except Exception as e:
             print(f"[MonitorTab] Error updating preview: {e}")
@@ -531,6 +718,9 @@ class MonitorTab(QWidget):
             widget = RegionThumbnail(idx, region_bbox)
             self.region_widgets.append(widget)
 
+            # Add placeholder for latest image
+            self.latest_region_images.append(None)
+
             # Add to grid
             row = idx // 3
             col = idx % 3
@@ -555,6 +745,17 @@ class MonitorTab(QWidget):
         """)
         # Update preview to show current window
         self.update_window_preview()
+
+    def _update_thumbnails(self):
+        """Update thumbnails from main thread (called by QTimer)"""
+        try:
+            for idx in range(len(self.region_widgets)):
+                if idx < len(self.latest_region_images):
+                    image = self.latest_region_images[idx]
+                    if image and idx < len(self.region_widgets):
+                        self.region_widgets[idx].update_thumbnail(image)
+        except Exception as e:
+            print(f"[MonitorTab] Error in _update_thumbnails: {e}")
 
     def draw_selection_rectangle(self):
         """Vẽ khung chọn trên preview"""
@@ -606,7 +807,8 @@ class MonitorTab(QWidget):
             # Hide main window
             self.window().hide()
 
-
+            # Start thumbnail update timer (main thread)
+            self.thumbnail_update_timer.start()
 
             # Start monitoring loop
             self._start_monitoring_loop()
@@ -630,9 +832,17 @@ class MonitorTab(QWidget):
                 try:
                     # Monitor all regions
                     for idx, monitor in enumerate(self.region_monitors):
-                        has_changed, image = monitor.check_and_capture()
+                        # Always capture current frame for thumbnail display
+                        current_image = monitor.capture_current()
+                        if current_image and idx < len(self.latest_region_images):
+                            # Store latest image for thumbnail update (thread-safe list write)
+                            self.latest_region_images[idx] = current_image.copy()
 
-                        if has_changed and image:
+                        # Check for changes
+                        has_changed, changed_image = monitor.check_and_capture()
+
+                        # Only process when changed
+                        if has_changed and changed_image:
                             scan_counter += 1
                             abs_bbox = monitor.get_absolute_bbox()
 
@@ -642,7 +852,7 @@ class MonitorTab(QWidget):
                                 region_coords = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
 
                                 # Send to processing
-                                self.app.on_region_change(idx, image, scan_counter, region_coords)
+                                self.app.on_region_change(idx, changed_image, scan_counter, region_coords)
 
                             # Update scan counter (thread-safe)
                             self.scan_counter = scan_counter
@@ -678,9 +888,15 @@ class MonitorTab(QWidget):
         try:
             self.is_monitoring = False
 
+            # Stop thumbnail update timer
+            self.thumbnail_update_timer.stop()
+
             # Clear monitors
             self.region_monitors.clear()
             self.regions.clear()
+
+            # Clear latest images
+            self.latest_region_images.clear()
 
             # Clear widgets
             for widget in self.region_widgets:

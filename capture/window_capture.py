@@ -79,6 +79,30 @@ class WindowCapture:
 
         return client_x, client_y, client_width, client_height
 
+    @staticmethod
+    def is_image_black(image: Image.Image, threshold: int = 10) -> bool:
+        """
+        Check if image is mostly black (GPU rendering issue indicator)
+
+        Args:
+            image: PIL Image to check
+            threshold: Max average pixel value to consider as black (0-255)
+
+        Returns:
+            True if image is mostly black
+        """
+        try:
+            # Convert to grayscale and get average brightness
+            gray = image.convert('L')
+            pixels = np.array(gray)
+            avg_brightness = pixels.mean()
+
+            print(f"[WindowCapture] Image average brightness: {avg_brightness:.2f}/255")
+            return avg_brightness < threshold
+        except Exception as e:
+            print(f"[WindowCapture] Error checking if image is black: {e}")
+            return False
+
     def capture_window(self) -> Optional[Image.Image]:
         """
         Capture window CLIENT AREA using BitBlt (Windows DC)
@@ -93,7 +117,8 @@ class WindowCapture:
 
             # Skip if window is minimized or too small
             if width <= 0 or height <= 0:
-                return None
+                print(f"[WindowCapture] Client area too small: {width}x{height}, trying screenshot")
+                return self.capture_from_screenshot()
 
             # Get CLIENT AREA DC (not window DC)
             # GetDC returns client area DC, GetWindowDC returns full window DC
@@ -136,10 +161,216 @@ class WindowCapture:
             mfc_dc.DeleteDC()
             win32gui.ReleaseDC(self.hwnd, hwnd_dc)
 
+            # Check if image is black (GPU rendering/hardware acceleration issue)
+            if self.is_image_black(image):
+                print("[WindowCapture] ⚠️ Client area capture returned black image (GPU rendering), trying screenshot")
+                return self.capture_from_screenshot()
+
             return image
 
         except Exception as e:
-            print(f"[WindowCapture] Error capturing window: {e}")
+            print(f"[WindowCapture] Error capturing client area: {e}, trying screenshot")
+            return self.capture_from_screenshot()
+
+    def capture_full_window(self) -> Optional[Image.Image]:
+        """
+        Fallback: Capture FULL window including title bar and borders using GetWindowDC
+
+        Returns:
+            PIL Image or None if capture failed
+        """
+        try:
+            # Get FULL window dimensions (including title bar and borders)
+            left, top, width, height = self.get_window_rect()
+
+            # Skip if window is minimized or too small
+            if width <= 0 or height <= 0:
+                print(f"[WindowCapture] Window rect too small: {width}x{height}")
+                return self.capture_from_screenshot()
+
+            # Get FULL WINDOW DC (includes title bar and borders)
+            hwnd_dc = win32gui.GetWindowDC(self.hwnd)
+            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+            save_dc = mfc_dc.CreateCompatibleDC()
+
+            # Create bitmap
+            bitmap = win32ui.CreateBitmap()
+            bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
+            save_dc.SelectObject(bitmap)
+
+            # BitBlt: Copy full window DC to memory DC
+            save_dc.BitBlt(
+                (0, 0),           # Destination top-left
+                (width, height),  # Dimensions
+                mfc_dc,           # Source DC
+                (0, 0),           # Source top-left
+                win32con.SRCCOPY  # Copy mode
+            )
+
+            # Convert bitmap to PIL Image
+            bmp_info = bitmap.GetInfo()
+            bmp_str = bitmap.GetBitmapBits(True)
+
+            image = Image.frombuffer(
+                'RGB',
+                (bmp_info['bmWidth'], bmp_info['bmHeight']),
+                bmp_str,
+                'raw',
+                'BGRX',
+                0,
+                1
+            )
+
+            # Cleanup
+            win32gui.DeleteObject(bitmap.GetHandle())
+            save_dc.DeleteDC()
+            mfc_dc.DeleteDC()
+            win32gui.ReleaseDC(self.hwnd, hwnd_dc)
+
+            # Check if image is black (GPU rendering issue)
+            if self.is_image_black(image):
+                print("[WindowCapture] ⚠️ Full window capture returned black image (GPU rendering), trying screenshot")
+                return self.capture_from_screenshot()
+
+            print(f"[WindowCapture] Full window capture successful: {width}x{height}")
+            return image
+
+        except Exception as e:
+            print(f"[WindowCapture] Error capturing full window: {e}, trying screenshot")
+            return self.capture_from_screenshot()
+
+    def capture_with_printwindow(self) -> Optional[Image.Image]:
+        """
+        Fallback #2: Capture using PrintWindow API
+        Works better for some applications (UWP apps, some games, etc.)
+
+        Returns:
+            PIL Image or None if capture failed
+        """
+        try:
+            import ctypes
+
+            # Get client rect for PrintWindow (captures client area)
+            client_rect = win32gui.GetClientRect(self.hwnd)
+            width = client_rect[2]
+            height = client_rect[3]
+
+            if width <= 0 or height <= 0:
+                print(f"[WindowCapture] PrintWindow: Client area too small: {width}x{height}")
+                return self.capture_from_screenshot()
+
+            # Create DC
+            hwnd_dc = win32gui.GetWindowDC(self.hwnd)
+            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+            save_dc = mfc_dc.CreateCompatibleDC()
+
+            # Create bitmap
+            bitmap = win32ui.CreateBitmap()
+            bitmap.CreateCompatibleBitmap(mfc_dc, width, height)
+            save_dc.SelectObject(bitmap)
+
+            # Use PrintWindow API
+            # PW_RENDERFULLCONTENT = 0x00000002
+            result = ctypes.windll.user32.PrintWindow(self.hwnd, save_dc.GetSafeHdc(), 2)
+
+            if result == 0:
+                print("[WindowCapture] PrintWindow failed (returned 0)")
+                # Cleanup
+                win32gui.DeleteObject(bitmap.GetHandle())
+                save_dc.DeleteDC()
+                mfc_dc.DeleteDC()
+                win32gui.ReleaseDC(self.hwnd, hwnd_dc)
+                return self.capture_from_screenshot()
+
+            # Convert bitmap to PIL Image
+            bmp_info = bitmap.GetInfo()
+            bmp_str = bitmap.GetBitmapBits(True)
+
+            image = Image.frombuffer(
+                'RGB',
+                (bmp_info['bmWidth'], bmp_info['bmHeight']),
+                bmp_str,
+                'raw',
+                'BGRX',
+                0,
+                1
+            )
+
+            # Cleanup
+            win32gui.DeleteObject(bitmap.GetHandle())
+            save_dc.DeleteDC()
+            mfc_dc.DeleteDC()
+            win32gui.ReleaseDC(self.hwnd, hwnd_dc)
+
+            print(f"[WindowCapture] PrintWindow capture successful: {width}x{height}")
+            return image
+
+        except Exception as e:
+            print(f"[WindowCapture] Error with PrintWindow: {e}")
+            return self.capture_from_screenshot()
+
+    def capture_from_screenshot(self) -> Optional[Image.Image]:
+        """
+        Fallback #3: Capture window by taking full screenshot and cropping
+        Works for ALL visible windows including GPU-rendered ones
+
+        Returns:
+            PIL Image or None if capture failed
+        """
+        try:
+            import mss
+
+            # Get window rectangle in screen coordinates
+            left, top, width, height = self.get_window_rect()
+
+            if width <= 0 or height <= 0:
+                print(f"[WindowCapture] Screenshot: Window size invalid: {width}x{height}")
+                return None
+
+            # Use mss for fast screenshot
+            with mss.mss() as sct:
+                # Define the region to capture
+                monitor = {
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height
+                }
+
+                # Capture the region
+                screenshot = sct.grab(monitor)
+
+                # Convert to PIL Image
+                image = Image.frombytes('RGB', screenshot.size, screenshot.bgra, 'raw', 'BGRX')
+
+                print(f"[WindowCapture] Screenshot capture successful: {width}x{height}")
+                return image
+
+        except ImportError:
+            print("[WindowCapture] mss library not installed, trying PIL ImageGrab")
+            try:
+                from PIL import ImageGrab
+
+                # Get window rectangle
+                left, top, width, height = self.get_window_rect()
+
+                if width <= 0 or height <= 0:
+                    print(f"[WindowCapture] Screenshot: Window size invalid: {width}x{height}")
+                    return None
+
+                # Capture using PIL ImageGrab
+                bbox = (left, top, left + width, top + height)
+                image = ImageGrab.grab(bbox)
+
+                print(f"[WindowCapture] ImageGrab capture successful: {width}x{height}")
+                return image
+
+            except Exception as e:
+                print(f"[WindowCapture] Error with ImageGrab: {e}")
+                return None
+
+        except Exception as e:
+            print(f"[WindowCapture] Error with screenshot capture: {e}")
             return None
 
     def capture_region(self, bbox: Tuple[int, int, int, int]) -> Optional[Image.Image]:
