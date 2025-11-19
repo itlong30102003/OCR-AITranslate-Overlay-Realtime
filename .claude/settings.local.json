@@ -9,7 +9,9 @@
       "Bash(pip uninstall:*)",
       "Bash(pip install:*)",
       "Bash(timeout:*)",
-      "Bash(if exist .session del .session)"
+      "Bash(if exist .session del .session)",
+      "Bash(dir /b c:UsersADMINMyProjectOCR-AITranslate-Overlay-Realtimeui)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []
