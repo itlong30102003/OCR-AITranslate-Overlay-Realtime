@@ -111,7 +111,7 @@ class MonitorTab(QWidget):
         # Thumbnail update timer (runs in main thread)
         self.thumbnail_update_timer = QTimer()
         self.thumbnail_update_timer.timeout.connect(self._update_thumbnails)
-        self.thumbnail_update_timer.setInterval(100)  # Update every 100ms
+        self.thumbnail_update_timer.setInterval(50)  # Update every 50ms for smoother display
 
         self.init_ui()
 
@@ -920,7 +920,7 @@ class MonitorTab(QWidget):
     def _start_monitoring_loop(self):
         """Monitoring loop cho tất cả các vùng"""
         def monitoring_thread():
-            fps = 15
+            fps = 25  # Increased from 15 to 25 for smoother monitoring
             frame_interval = 1.0 / fps
             scan_counter = 0
 
@@ -943,8 +943,8 @@ class MonitorTab(QWidget):
                         time.sleep(frame_interval)
                         continue
 
-                    # Debug: Print loop info every 30 frames (~2 seconds at 15 fps)
-                    if loop_count % 30 == 1:
+                    # Debug: Print loop info every 50 frames (~2 seconds at 25 fps)
+                    if loop_count % 50 == 1:
                         print(f"[MonitoringThread] Loop #{loop_count}, monitoring {len(monitors_snapshot)} regions...")
 
                     # Monitor all regions

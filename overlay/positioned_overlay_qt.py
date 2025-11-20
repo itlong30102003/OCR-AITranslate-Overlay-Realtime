@@ -223,12 +223,7 @@ class PositionedOverlayQt(QWidget):
         self.region_widgets.clear()
 
     def _update_boxes_slot(self, translated_boxes: List):
-        """Slot to handle text box updates on main thread"""
-        print(f"[Positioned Overlay Qt] _update_boxes_slot called with {len(translated_boxes)} boxes")
-
-        # Clear existing widgets first to hide old overlays
-        self._clear_widgets()
-
+        """Slot to handle text box updates on main thread - OPTIMIZED to avoid recreating all widgets"""
         # Group translated boxes by region
         regions = {}
         for tbox in translated_boxes:
@@ -237,25 +232,39 @@ class PositionedOverlayQt(QWidget):
                 regions[region_idx] = []
             regions[region_idx].append(tbox)
 
-        print(f"[Positioned Overlay Qt] Creating {len(regions)} region overlays...")
+        # SMART UPDATE: Only recreate changed regions
+        # Build mapping of existing widgets by region
+        existing_regions = {}
+        for widget in self.region_widgets:
+            if hasattr(widget, 'text_boxes') and len(widget.text_boxes) > 0:
+                region_idx = widget.text_boxes[0].region_idx
+                existing_regions[region_idx] = widget
 
-        # Create one overlay widget per region
+        # Remove widgets for regions that no longer exist
+        widgets_to_keep = []
+        for region_idx, widget in existing_regions.items():
+            if region_idx not in regions:
+                widget.hide()
+                widget.deleteLater()
+            else:
+                widgets_to_keep.append(widget)
+
+        self.region_widgets = widgets_to_keep
+
+        # Update or create widgets for each region
         for region_idx, boxes in regions.items():
-            print(f"[Positioned Overlay Qt] Creating overlay for region {region_idx} with {len(boxes)} boxes")
-            widget = RegionOverlay(boxes, device_pixel_ratio=self.device_pixel_ratio)
-            widget.show()
-            widget.raise_()
-            widget.activateWindow()
-            self.region_widgets.append(widget)
-            pos = widget.pos()
-            size = widget.size()
-            print(f"[Positioned Overlay Qt] Widget shown: visible={widget.isVisible()}")
-            print(f"[Positioned Overlay Qt]   Position: x={pos.x()}, y={pos.y()}")
-            print(f"[Positioned Overlay Qt]   Size: {size.width()}x{size.height()}")
-            print(f"[Positioned Overlay Qt]   WindowFlags: {widget.windowFlags()}")
-            print(f"[Positioned Overlay Qt]   WindowState: {widget.windowState()}")
-
-        print(f"[Positioned Overlay Qt] ✓ Created {len(regions)} region overlays")
+            if region_idx in existing_regions:
+                # Region exists - just update its boxes
+                widget = existing_regions[region_idx]
+                widget.text_boxes = boxes
+                widget.update()  # Trigger repaint
+            else:
+                # New region - create widget
+                widget = RegionOverlay(boxes, device_pixel_ratio=self.device_pixel_ratio)
+                widget.show()
+                widget.raise_()
+                widget.activateWindow()
+                self.region_widgets.append(widget)
 
     def show(self):
         """Show all text boxes (Thread-safe)"""

@@ -16,7 +16,8 @@ class GeminiTranslator(BaseTranslator):
         super().__init__("gemini-2.0-flash-lite")
 
         # Rate limiting: 15 requests/minute = 1 request per 4 seconds
-        self.rate_limit_delay = 4.0  # seconds between requests
+        # Reduced to 1.5s for faster multi-region translation (burst tolerance)
+        self.rate_limit_delay = 1.5  # seconds between requests
         self.last_request_time = 0
         self.cooldown_until = 0  # Timestamp when rate limit cooldown ends
 

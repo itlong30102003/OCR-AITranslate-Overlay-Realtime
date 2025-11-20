@@ -180,9 +180,8 @@ class AsyncProcessingService:
             return
 
         try:
-            # Clear previous overlays before processing new region
-            if self.overlay_mode == "positioned":
-                self.overlay_service.clear_positioned_overlay()
+            # DO NOT clear overlay here - overlay_service handles per-region updates!
+            # Clearing would remove all other regions' overlays → flickering/not smooth
 
             # Only positioned mode supported now
             await self._process_region_positioned(region_idx, img, scan_counter, region_coords)
