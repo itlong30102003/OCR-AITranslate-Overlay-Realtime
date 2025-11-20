@@ -2,32 +2,61 @@
 
 import sys
 import os
+import warnings
+
+# Suppress all warnings for cleaner output
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# Suppress Qt DPI warnings
+os.environ["QT_LOGGING_RULES"] = "qt.qpa.window=false"
+
+# Suppress gRPC/Google Cloud warnings (C++ level)
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+os.environ["GLOG_minloglevel"] = "3"  # 3 = FATAL only
+os.environ["GRPC_TRACE"] = ""
+os.environ["GRPC_VERBOSITY"] = "NONE"
+
+# Suppress ABSL logging (Google's C++ logging library)
+os.environ["ABSL_MINLOGLEVEL"] = "3"  # Only show FATAL
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+# IMPORTANT: Set environment variables BEFORE importing PyQt6
+# This tells Qt to not manage DPI awareness - we'll let Windows handle it
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+os.environ["QT_SCALE_FACTOR"] = "1"
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
-import ctypes
 
-# IMPORTANT: Enable High DPI scaling BEFORE creating QApplication
-# This fixes DPI scaling issues on Windows
-
-# Method 1: Windows native DPI awareness
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
-except:
-    try:
-        ctypes.windll.user32.SetProcessDPIAware()  # Fallback for older Windows
-    except:
-        pass
-
-# Method 2: Qt High DPI support
-os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+# IMPORTANT: Disable Qt's DPI awareness management completely
+# This prevents the "SetProcessDpiAwarenessContext failed" error
 QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
-# Create QApplication
+# Create QApplication (Qt will NOT try to set DPI awareness)
 app = QApplication(sys.argv)
 
 from services import WindowService
 from ui.login_window import LoginWindow
 from ui.main_window import MainWindow
+
+
+def suppress_stderr():
+    """Context manager to suppress stderr output (for gRPC warnings)"""
+    import io
+    import sys
+
+    class SuppressStderr:
+        def __enter__(self):
+            self.old_stderr = sys.stderr
+            sys.stderr = io.StringIO()
+            return self
+
+        def __exit__(self, *_):
+            sys.stderr = self.old_stderr
+            return False
+
+    return SuppressStderr()
 
 
 def main():
@@ -36,8 +65,13 @@ def main():
 
     # Check if Firebase is available
     try:
-        from firebase.firebase_manager import FirebaseManager
-        firebase_available = FirebaseManager.is_available()
+        # Temporarily suppress stderr to hide gRPC/ALTS warnings during import
+        import contextlib
+        import io
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            from firebase.firebase_manager import FirebaseManager
+            firebase_available = FirebaseManager.is_available()
     except Exception as e:
         print(f"[WARNING] Firebase not available: {e}")
         firebase_available = False

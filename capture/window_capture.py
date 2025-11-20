@@ -319,7 +319,7 @@ class WindowCapture:
 class HashChangeDetector:
     """Detect image changes using perceptual hash"""
 
-    def __init__(self, threshold: float = 5.0):
+    def __init__(self, threshold: float = 2.0):
         """
         Initialize change detector
 
@@ -327,6 +327,7 @@ class HashChangeDetector:
             threshold: Hamming distance threshold for change detection
                       Lower = more sensitive (detect small changes)
                       Higher = less sensitive (only detect big changes)
+                      Default: 2.0 (good for text changes)
         """
         self.threshold = threshold
         self.previous_hash = None
@@ -387,14 +388,20 @@ class HashChangeDetector:
         if self.previous_hash is None:
             # First frame, always changed
             self.previous_hash = current_hash
+            print(f"[HashChangeDetector] First frame detected")
             return True
 
         # Compare with previous hash
         distance = self.hamming_distance(current_hash, self.previous_hash)
         changed = distance > self.threshold
 
+        # Debug logging
         if changed:
+            print(f"[HashChangeDetector] Change detected! Distance: {distance} > Threshold: {self.threshold}")
             self.previous_hash = current_hash
+        # Uncomment for more verbose debugging
+        # else:
+        #     print(f"[HashChangeDetector] No change. Distance: {distance} <= Threshold: {self.threshold}")
 
         return changed
 
@@ -411,7 +418,7 @@ class WindowRegionMonitor:
         window_title: Optional[str] = None,
         hwnd: Optional[int] = None,
         region_bbox: Optional[Tuple[int, int, int, int]] = None,
-        change_threshold: float = 5.0
+        change_threshold: float = 2.0
     ):
         """
         Initialize window region monitor

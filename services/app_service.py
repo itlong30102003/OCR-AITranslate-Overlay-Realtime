@@ -130,3 +130,16 @@ class AppService:
     def is_translation_available(self) -> bool:
         """Check if translation service is available"""
         return self.translation_service.is_available()
+
+    def on_region_change(self, idx: int, img, scan_counter: int, region_coords: tuple = None):
+        """
+        Callback when region content changes - triggers OCR + Translation
+
+        Args:
+            idx: Region index
+            img: PIL Image of the region
+            scan_counter: Current scan counter
+            region_coords: Region's absolute screen coordinates (x1, y1, x2, y2)
+        """
+        # Process asynchronously - non-blocking, parallel execution
+        self.async_service.process_region_async(idx, img, scan_counter, region_coords)

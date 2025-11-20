@@ -23,17 +23,17 @@ class RegionThumbnail(QFrame):
         self.setLineWidth(2)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(10, 10, 10, 10)
 
         # Region title
         title = QLabel(f"Vùng {region_idx + 1}")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-weight: bold; color: #ffffff;")
+        title.setStyleSheet("font-weight: bold; color: #ffffff; font-size: 14px; padding: 5px;")
         layout.addWidget(title)
 
         # Thumbnail label
         self.thumbnail_label = QLabel()
-        self.thumbnail_label.setFixedSize(200, 150)
+        self.thumbnail_label.setFixedSize(300, 225)
         self.thumbnail_label.setStyleSheet("border: 1px solid #374151; background-color: #1f2937;")
         self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.thumbnail_label)
@@ -41,7 +41,7 @@ class RegionThumbnail(QFrame):
         # Status label
         self.status_label = QLabel("Đang giám sát")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("color: #10b981; font-size: 12px;")
+        self.status_label.setStyleSheet("color: #10b981; font-size: 13px; padding: 3px;")
         layout.addWidget(self.status_label)
 
         # Set background
@@ -55,18 +55,37 @@ class RegionThumbnail(QFrame):
 
     def update_thumbnail(self, pil_image: Image.Image):
         """Cập nhật thumbnail từ PIL Image"""
-        pil_image = pil_image.copy()
-        if pil_image.mode != 'RGB':
-            pil_image = pil_image.convert('RGB')
-        pil_image.thumbnail((200, 150), Image.BILINEAR)
-        img_data = pil_image.tobytes('raw', 'RGB')
-        qimage = QImage(img_data, pil_image.width, pil_image.height, QImage.Format.Format_RGB888)
-        pixmap = QPixmap.fromImage(qimage)
-        self.thumbnail_label.setPixmap(pixmap.scaled(200, 150, Qt.AspectRatioMode.KeepAspectRatio))
+        try:
+            pil_image = pil_image.copy()
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
+
+            # Resize maintaining aspect ratio
+            pil_image.thumbnail((300, 225), Image.LANCZOS)
+
+            # Get actual size after thumbnail
+            width, height = pil_image.size
+
+            # Convert to QImage with correct stride
+            img_data = pil_image.tobytes('raw', 'RGB')
+            bytes_per_line = width * 3  # RGB = 3 bytes per pixel
+            qimage = QImage(img_data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+
+            # Make a deep copy to ensure data persists
+            qimage = qimage.copy()
+
+            pixmap = QPixmap.fromImage(qimage)
+            self.thumbnail_label.setPixmap(pixmap)
+        except Exception as e:
+            print(f"[RegionThumbnail] Error updating thumbnail: {e}")
 
 
 class MonitorTab(QWidget):
     """Tab Giám sát - Simplified workflow"""
+
+    # Define signals for thread-safe UI updates
+    from PyQt6.QtCore import pyqtSignal
+    scan_counter_updated = pyqtSignal(int)
 
     def __init__(self, app_instance):
         super().__init__()
@@ -309,15 +328,16 @@ class MonitorTab(QWidget):
 
         # Regions display area (thumbnails of monitored regions)
         regions_title = QLabel("Các vùng đang giám sát:")
-        regions_title.setStyleSheet("color: #ffffff; font-size: 14px; font-weight: bold; margin-top: 10px;")
+        regions_title.setStyleSheet("color: #ffffff; font-size: 16px; font-weight: bold; margin-top: 15px; margin-bottom: 5px;")
         layout.addWidget(regions_title)
 
         self.regions_scroll = QScrollArea()
         self.regions_scroll.setWidgetResizable(True)
-        self.regions_scroll.setMaximumHeight(200)
+        self.regions_scroll.setMinimumHeight(350)
+        self.regions_scroll.setMaximumHeight(550)
         self.regions_scroll.setStyleSheet("""
             QScrollArea {
-                border: 1px solid #374151;
+                border: 2px solid #374151;
                 border-radius: 5px;
                 background-color: #1f2937;
             }
@@ -325,8 +345,8 @@ class MonitorTab(QWidget):
 
         self.regions_container = QWidget()
         self.regions_layout = QGridLayout(self.regions_container)
-        self.regions_layout.setContentsMargins(10, 10, 10, 10)
-        self.regions_layout.setSpacing(10)
+        self.regions_layout.setContentsMargins(15, 15, 15, 15)
+        self.regions_layout.setSpacing(15)
 
         self.regions_scroll.setWidget(self.regions_container)
         layout.addWidget(self.regions_scroll)
@@ -340,8 +360,15 @@ class MonitorTab(QWidget):
         # Connect combo box to enable continue button
         self.window_combo.currentIndexChanged.connect(self.on_window_combo_changed)
 
+        # Connect signals for thread-safe UI updates
+        self.scan_counter_updated.connect(self._update_scan_label)
+
         # Auto-refresh window list on load
         QTimer.singleShot(100, self.refresh_window_list)
+
+    def _update_scan_label(self, counter: int):
+        """Update scan label (called from main thread via signal)"""
+        self.scan_label.setText(f"Scan: {counter}")
 
     def refresh_window_list(self):
         """Tự động refresh danh sách cửa sổ"""
@@ -699,12 +726,46 @@ class MonitorTab(QWidget):
         # Add region and create monitor
         self.add_region(region_bbox)
 
-        # Auto-start monitoring immediately
-        self.start_monitoring()
+        # Reset selection for next region
+        self.selection_start = None
+        self.selection_current = None
+
+        # Ask if user wants to add more regions
+        if not self.is_monitoring:
+            reply = QMessageBox.question(
+                self,
+                "Chọn vùng",
+                f"Đã chọn {len(self.regions)} vùng.\n\nBạn có muốn chọn thêm vùng khác không?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                # Show preview again for selecting another region
+                self.instruction_label.setText(f"📍 Click và kéo trên preview để chọn vùng {len(self.regions) + 1}")
+                self.instruction_label.setStyleSheet("""
+                    color: #fbbf24;
+                    font-size: 13px;
+                    padding: 10px;
+                    background-color: #451a03;
+                    border-radius: 5px;
+                    border: 1px solid #f59e0b;
+                """)
+            else:
+                # User done selecting, start monitoring
+                self.start_monitoring()
+        else:
+            print(f"[MonitorTab] Added region while monitoring - total regions: {len(self.region_monitors)}")
 
     def add_region(self, region_bbox: Tuple[int, int, int, int]):
-        """Thêm region mới vào danh sách"""
+        """Thêm region mới vào danh sách (thread-safe)"""
         try:
+            print(f"[MonitorTab] Adding region {len(self.region_widgets) + 1}...")
+            print(f"  - HWND: {self.selected_hwnd}")
+            print(f"  - Bbox: {region_bbox}")
+            print(f"  - Current monitors: {len(self.region_monitors)}")
+            print(f"  - Is monitoring: {self.is_monitoring}")
+
             # Create monitor for this region
             monitor = WindowRegionMonitor(
                 hwnd=self.selected_hwnd,
@@ -726,11 +787,23 @@ class MonitorTab(QWidget):
             col = idx % 3
             self.regions_layout.addWidget(widget, row, col)
 
-            print(f"[MonitorTab] Added region {idx + 1}: {region_bbox}")
+            print(f"[MonitorTab] ✓ Added region {idx + 1}: {region_bbox}")
+            print(f"  - Total regions: {len(self.regions)}")
+            print(f"  - Total monitors: {len(self.region_monitors)}")
+            print(f"  - Total widgets: {len(self.region_widgets)}")
+            print(f"  - Total image placeholders: {len(self.latest_region_images)}")
+
+            # Update status label if monitoring
+            if self.is_monitoring:
+                self.status_label.setText(f"Đang giám sát {len(self.regions)} vùng")
+                self.instruction_label.setText(f"✓ Đang giám sát {len(self.regions)} vùng - Click 'Chọn vùng mới' để thêm vùng")
 
         except Exception as e:
-            QMessageBox.critical(self, "Lỗi", f"Không thể thêm vùng: {e}")
-            print(f"[MonitorTab] Error adding region: {e}")
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"[MonitorTab] ❌ ERROR adding region:")
+            print(error_trace)
+            QMessageBox.critical(self, "Lỗi", f"Không thể thêm vùng: {e}\n\nXem console để biết chi tiết.")
 
     def add_new_region(self):
         """Thêm vùng mới trong khi đang monitoring"""
@@ -779,18 +852,27 @@ class MonitorTab(QWidget):
 
     def start_monitoring(self):
         """Tự động bắt đầu giám sát tất cả các vùng"""
+        print(f"\n[MonitorTab] ========== START MONITORING ==========")
+        print(f"[MonitorTab] Region monitors: {len(self.region_monitors)}")
+        print(f"[MonitorTab] Regions: {len(self.regions)}")
+        print(f"[MonitorTab] Widgets: {len(self.region_widgets)}")
+
         if not self.region_monitors:
             QMessageBox.warning(self, "Cảnh báo", "Chưa có vùng nào được chọn.")
             return
 
         try:
             # Start async service if not running
+            print("[MonitorTab] Checking async service...")
             if not self.app.async_service.is_running():
-                print("[MonitorTab] Starting async service...")
+                print("[MonitorTab] Async service not running, starting...")
                 self.app.async_service.start()
                 time.sleep(0.3)
+            else:
+                print("[MonitorTab] Async service already running")
 
             # Update UI state
+            print("[MonitorTab] Updating UI state...")
             self.is_monitoring = True
             self.add_region_btn.setVisible(True)
             self.status_label.setText(f"Đang giám sát {len(self.regions)} vùng")
@@ -804,19 +886,35 @@ class MonitorTab(QWidget):
                 border: 1px solid #10b981;
             """)
 
-            # Hide main window
-            self.window().hide()
-
             # Start thumbnail update timer (main thread)
+            print("[MonitorTab] Starting thumbnail update timer...")
             self.thumbnail_update_timer.start()
 
             # Start monitoring loop
+            print("[MonitorTab] Starting monitoring loop...")
             self._start_monitoring_loop()
 
-            print(f"[MonitorTab] Monitoring started for {len(self.regions)} regions")
+            # Wait a bit to ensure monitoring thread started
+            time.sleep(0.5)
+
+            # Hide preview section (no longer needed)
+            print("[MonitorTab] Hiding preview section...")
+            self.preview_section.setVisible(False)
+
+            # Hide main window AFTER everything is set up
+            print("[MonitorTab] Hiding main window...")
+            self.window().hide()
+
+            print(f"[MonitorTab] ✓ Monitoring started successfully for {len(self.regions)} regions")
+            print(f"[MonitorTab] ==========================================\n")
 
         except Exception as e:
-            QMessageBox.critical(self, "Lỗi", f"Không thể bắt đầu giám sát: {e}")
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"[MonitorTab] ❌ ERROR starting monitoring:")
+            print(error_trace)
+            QMessageBox.critical(self, "Lỗi", f"Không thể bắt đầu giám sát: {e}\n\nXem console để biết chi tiết.")
+            self.is_monitoring = False
             self.window().showNormal()
 
     def _start_monitoring_loop(self):
@@ -826,12 +924,31 @@ class MonitorTab(QWidget):
             frame_interval = 1.0 / fps
             scan_counter = 0
 
-            while self.is_monitoring and self.region_monitors:
+            print(f"\n[MonitoringThread] ========== THREAD STARTED ==========")
+            print(f"[MonitoringThread] Monitoring {len(self.region_monitors)} regions at {fps} FPS")
+            print(f"[MonitoringThread] Frame interval: {frame_interval:.3f}s")
+            print(f"[MonitoringThread] is_monitoring flag: {self.is_monitoring}")
+
+            loop_count = 0
+            while self.is_monitoring:
+                loop_count += 1
                 start_time = time.time()
 
                 try:
+                    # Create snapshot of monitors to avoid race conditions when adding regions
+                    monitors_snapshot = list(self.region_monitors)
+
+                    if not monitors_snapshot:
+                        print(f"[MonitoringThread] No monitors found, waiting...")
+                        time.sleep(frame_interval)
+                        continue
+
+                    # Debug: Print loop info every 30 frames (~2 seconds at 15 fps)
+                    if loop_count % 30 == 1:
+                        print(f"[MonitoringThread] Loop #{loop_count}, monitoring {len(monitors_snapshot)} regions...")
+
                     # Monitor all regions
-                    for idx, monitor in enumerate(self.region_monitors):
+                    for idx, monitor in enumerate(monitors_snapshot):
                         # Always capture current frame for thumbnail display
                         current_image = monitor.capture_current()
                         if current_image and idx < len(self.latest_region_images):
@@ -846,26 +963,24 @@ class MonitorTab(QWidget):
                             scan_counter += 1
                             abs_bbox = monitor.get_absolute_bbox()
 
+                            print(f"\n[MonitoringThread] 🔥 Region {idx} CHANGED! Scan: {scan_counter}")
+
                             if abs_bbox:
                                 # Convert abs_bbox (x, y, w, h) to region_coords (x1, y1, x2, y2)
                                 abs_x, abs_y, abs_w, abs_h = abs_bbox
                                 region_coords = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
 
+                                print(f"[MonitoringThread] Sending to OCR processing...")
+                                print(f"  - Region index: {idx}")
+                                print(f"  - Image size: {changed_image.size}")
+                                print(f"  - Region coords: {region_coords}")
+
                                 # Send to processing
                                 self.app.on_region_change(idx, changed_image, scan_counter, region_coords)
 
-                            # Update scan counter (thread-safe)
+                            # Update scan counter (thread-safe via signal)
                             self.scan_counter = scan_counter
-                            try:
-                                from PyQt6.QtCore import QMetaObject
-                                QMetaObject.invokeMethod(
-                                    self.scan_label,
-                                    "setText",
-                                    Qt.ConnectionType.QueuedConnection,
-                                    f"Scan: {scan_counter}"
-                                )
-                            except Exception as ui_error:
-                                print(f"[MonitorTab] UI update error: {ui_error}")
+                            self.scan_counter_updated.emit(scan_counter)
 
                     # Maintain FPS
                     elapsed = time.time() - start_time
@@ -874,14 +989,21 @@ class MonitorTab(QWidget):
                         time.sleep(to_sleep)
 
                 except Exception as e:
-                    print(f"[MonitorTab] Error in monitoring loop: {e}")
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    print(f"\n[MonitoringThread] ❌ ERROR in monitoring loop:")
+                    print(error_trace)
                     break
 
-            print("[MonitorTab] Monitoring loop ended")
+            print(f"\n[MonitoringThread] ========== THREAD ENDED ==========")
+            print(f"[MonitoringThread] Total loops executed: {loop_count}")
+            print(f"[MonitoringThread] Total scans: {scan_counter}\n")
 
         # Start monitoring thread
+        print("[MonitorTab] Creating monitoring thread...")
         self.monitoring_thread = threading.Thread(target=monitoring_thread, daemon=True)
         self.monitoring_thread.start()
+        print("[MonitorTab] Monitoring thread started!")
 
     def stop_monitoring(self):
         """Dừng giám sát (được gọi từ floating control hoặc user)"""
