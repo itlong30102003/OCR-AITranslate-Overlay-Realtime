@@ -56,14 +56,12 @@ class MainWindow(QMainWindow):
         self.content_stack = QStackedWidget()
         ui_layout.addWidget(self.content_stack)
 
-        # Add tabs
-        self.tab_main = self.create_main_tab()
-        self.tab_history = HistoryTab(user_id=self.user['localId'])
+        # Add tabs (Monitor tab is now the main/first tab)
         self.tab_monitor = MonitorTab(app_instance=self.app)
+        self.tab_history = HistoryTab(user_id=self.user['localId'])
 
-        self.content_stack.addWidget(self.tab_main)
-        self.content_stack.addWidget(self.tab_history)
         self.content_stack.addWidget(self.tab_monitor)
+        self.content_stack.addWidget(self.tab_history)
 
 
 
@@ -80,7 +78,7 @@ class MainWindow(QMainWindow):
         if not icon_pixmap.isNull():
             # Fixed icon size 47x47
             self.toggle_ui_btn.setIcon(QIcon(icon_pixmap))
-            self.toggle_ui_btn.setIconSize(QSize(47,47))
+            self.toggle_ui_btn.setIconSize(QSize(50,50))
 
         # self.toggle_ui_btn.setStyleSheet("""
         #     QPushButton {
@@ -95,7 +93,7 @@ class MainWindow(QMainWindow):
         # Initially show the floating button in bottom-right corner (moved up 40px)
         screen = QApplication.primaryScreen()
         screen_geometry = screen.geometry()
-        self.toggle_ui_btn.move(screen_geometry.width() - 90, screen_geometry.height() - 80)
+        self.toggle_ui_btn.move(screen_geometry.width() - 50, screen_geometry.height() - 120)
         self.toggle_ui_btn.show()
         self.toggle_ui_btn.raise_()
         self.toggle_ui_btn.activateWindow()
@@ -161,11 +159,10 @@ class MainWindow(QMainWindow):
         # Navigation buttons
         self.nav_buttons = []
 
-        btn_main = self.create_nav_button("🏠  Chính", 0)
+        btn_monitor = self.create_nav_button("👁️  Giám sát", 0)
         btn_history = self.create_nav_button("📜  Lịch sử", 1)
-        btn_monitor = self.create_nav_button("👁️  Giám sát", 2)
 
-        for btn in [btn_main, btn_history, btn_monitor]:
+        for btn in [btn_monitor, btn_history]:
             self.nav_buttons.append(btn)
             layout.addWidget(btn)
 
@@ -266,89 +263,6 @@ class MainWindow(QMainWindow):
                     }
                 """)
 
-    def create_main_tab(self):
-        """Create main dashboard tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(30)
-
-        # Header
-        header = QLabel("Dashboard")
-        header.setStyleSheet("font-size: 28px; font-weight: bold; color: #ffffff;")
-        layout.addWidget(header)
-
-        # Welcome message
-        welcome = QLabel(f"Welcome, {self.user.get('email', 'User')}!")
-        welcome.setStyleSheet("font-size: 16px; color: #9ca3af;")
-        layout.addWidget(welcome)
-
-        layout.addSpacing(30)
-
-        # Start OCR button
-        start_btn = QPushButton("🚀 Bắt đầu OCR & Translation")
-        start_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #10b981;
-                color: white;
-                font-size: 18px;
-                font-weight: bold;
-                padding: 20px;
-                border-radius: 10px;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #059669;
-            }
-        """)
-        start_btn.clicked.connect(self.start_ocr)
-        layout.addWidget(start_btn)
-
-        # Instructions
-        instructions = QLabel(
-            "Hướng dẫn:\n"
-            "1. Click nút trên để bắt đầu\n"
-            "2. Chọn vùng màn hình cần dịch\n"
-            "3. Xem kết quả dịch trong overlay\n"
-            "4. Lịch sử dịch sẽ tự động lưu vào Firebase"
-        )
-        instructions.setStyleSheet("""
-            QLabel {
-                background-color: #1f2937;
-                color: #e5e7eb;
-                padding: 20px;
-                border-radius: 10px;
-                font-size: 14px;
-                line-height: 1.6;
-            }
-        """)
-        layout.addWidget(instructions)
-
-        # Overlay mode info
-        overlay_mode = self.app.overlay_service.get_overlay_mode()
-        mode_info = QLabel(f"Chế độ hiện tại: {overlay_mode.upper()}")
-        mode_info.setStyleSheet("color: #60a5fa; font-size: 14px; margin-top: 20px;")
-        layout.addWidget(mode_info)
-
-        layout.addStretch()
-
-        return widget
-
-    def start_ocr(self):
-        """Start OCR workflow - Switch to Monitor tab"""
-        try:
-            # Switch to Monitor tab (index 2)
-            self.switch_tab(2)
-
-            # Show message to guide user
-            QMessageBox.information(
-                self,
-                "Bắt đầu OCR",
-                "Vui lòng sử dụng tab 'Giám sát' để chọn vùng và bắt đầu dịch."
-            )
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to start OCR: {e}")
 
     def handle_logout(self):
         """Handle logout"""
