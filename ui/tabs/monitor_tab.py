@@ -8,16 +8,19 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 from PIL import Image
 import threading
 import time
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from capture.window_capture import WindowRegionMonitor, WindowCapture
 
 
 class RegionThumbnail(QFrame):
-    """Widget hiển thị thumbnail cho một region"""
+    """Widget hiển thị thumbnail cho một region với nút stop"""
 
-    def __init__(self, region_idx: int, coords: Tuple[int, int, int, int]):
+    from PyQt6.QtCore import pyqtSignal
+    stop_requested = pyqtSignal(int)  # Emit region_id when stop is clicked
+
+    def __init__(self, region_id: int, coords: Tuple[int, int, int, int]):
         super().__init__()
-        self.region_idx = region_idx
+        self.region_id = region_id  # Use region_id instead of region_idx
         self.coords = coords
         self.setFrameStyle(QFrame.Shape.Box)
         self.setLineWidth(2)
@@ -25,11 +28,43 @@ class RegionThumbnail(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
 
+        # Title layout with stop button
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+
         # Region title
-        title = QLabel(f"Vùng {region_idx + 1}")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title = QLabel(f"Vùng {region_id + 1}")
+        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         title.setStyleSheet("font-weight: bold; color: #ffffff; font-size: 14px; padding: 5px;")
-        layout.addWidget(title)
+        title_layout.addWidget(title)
+
+        # Spacer
+        title_layout.addStretch()
+
+        # Stop button
+        stop_btn = QPushButton("✕")
+        stop_btn.setFixedSize(24, 24)
+        stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #ef4444;
+                color: white;
+                border-radius: 12px;
+                font-weight: bold;
+                font-size: 16px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #dc2626;
+            }
+            QPushButton:pressed {
+                background-color: #b91c1c;
+            }
+        """)
+        stop_btn.setToolTip("Dừng theo dõi vùng này")
+        stop_btn.clicked.connect(lambda: self.stop_requested.emit(self.region_id))
+        title_layout.addWidget(stop_btn)
+
+        layout.addLayout(title_layout)
 
         # Thumbnail label
         self.thumbnail_label = QLabel()
@@ -95,14 +130,15 @@ class MonitorTab(QWidget):
         self.selected_hwnd = None
         self.selected_window_title = None
 
-        # Region monitoring - support multiple regions
-        self.region_monitors: List[WindowRegionMonitor] = []
-        self.regions: List[Tuple[int, int, int, int]] = []
-        self.region_widgets: List[RegionThumbnail] = []
+        # Region monitoring - support multiple regions with stable IDs
+        self.region_id_counter = 0  # Counter for generating unique region IDs
+        self.region_monitors: Dict[int, WindowRegionMonitor] = {}  # {region_id: monitor}
+        self.regions: Dict[int, Tuple[int, int, int, int]] = {}  # {region_id: bbox}
+        self.region_widgets: Dict[int, RegionThumbnail] = {}  # {region_id: widget}
         self.scan_counter = 0
 
         # Store latest captured images for thumbnail updates
-        self.latest_region_images: List[Optional[Image.Image]] = []
+        self.latest_region_images: Dict[int, Optional[Image.Image]] = {}  # {region_id: image}
 
         # Monitoring state
         self.is_monitoring = False
@@ -758,9 +794,13 @@ class MonitorTab(QWidget):
             print(f"[MonitorTab] Added region while monitoring - total regions: {len(self.region_monitors)}")
 
     def add_region(self, region_bbox: Tuple[int, int, int, int]):
-        """Thêm region mới vào danh sách (thread-safe)"""
+        """Thêm region mới vào danh sách với unique ID (thread-safe)"""
         try:
-            print(f"[MonitorTab] Adding region {len(self.region_widgets) + 1}...")
+            # Generate unique region ID
+            region_id = self.region_id_counter
+            self.region_id_counter += 1
+
+            print(f"[MonitorTab] Adding region ID={region_id} (Display: Vùng {len(self.region_widgets) + 1})...")
             print(f"  - HWND: {self.selected_hwnd}")
             print(f"  - Bbox: {region_bbox}")
             print(f"  - Current monitors: {len(self.region_monitors)}")
@@ -771,23 +811,25 @@ class MonitorTab(QWidget):
                 hwnd=self.selected_hwnd,
                 region_bbox=region_bbox
             )
-            self.region_monitors.append(monitor)
-            self.regions.append(region_bbox)
+            self.region_monitors[region_id] = monitor
+            self.regions[region_id] = region_bbox
 
-            # Add widget
-            idx = len(self.region_widgets)
-            widget = RegionThumbnail(idx, region_bbox)
-            self.region_widgets.append(widget)
+            # Add widget with region_id
+            widget = RegionThumbnail(region_id, region_bbox)
+            # Connect stop signal
+            widget.stop_requested.connect(self.stop_region)
+            self.region_widgets[region_id] = widget
 
             # Add placeholder for latest image
-            self.latest_region_images.append(None)
+            self.latest_region_images[region_id] = None
 
             # Add to grid
-            row = idx // 3
-            col = idx % 3
+            grid_position = len(self.region_widgets) - 1
+            row = grid_position // 3
+            col = grid_position % 3
             self.regions_layout.addWidget(widget, row, col)
 
-            print(f"[MonitorTab] ✓ Added region {idx + 1}: {region_bbox}")
+            print(f"[MonitorTab] ✓ Added region ID={region_id}: {region_bbox}")
             print(f"  - Total regions: {len(self.regions)}")
             print(f"  - Total monitors: {len(self.region_monitors)}")
             print(f"  - Total widgets: {len(self.region_widgets)}")
@@ -807,6 +849,12 @@ class MonitorTab(QWidget):
 
     def add_new_region(self):
         """Thêm vùng mới trong khi đang monitoring"""
+        print("[MonitorTab] Add new region button clicked - showing preview...")
+
+        # Show preview section (was hidden during monitoring)
+        self.preview_section.setVisible(True)
+
+        # Update instruction
         self.instruction_label.setText("📍 Click và kéo trên preview để chọn vùng mới")
         self.instruction_label.setStyleSheet("""
             color: #fbbf24;
@@ -816,17 +864,100 @@ class MonitorTab(QWidget):
             border-radius: 5px;
             border: 1px solid #f59e0b;
         """)
+
         # Update preview to show current window
         self.update_window_preview()
+
+        print("[MonitorTab] Preview section shown for region selection")
+
+    def stop_region(self, region_id: int):
+        """
+        Stop monitoring a specific region (called when stop button clicked)
+
+        Args:
+            region_id: Region ID to stop
+        """
+        print(f"\n[MonitorTab] ========== STOP REGION ID={region_id} ==========")
+
+        try:
+            # 1. Remove monitor
+            if region_id in self.region_monitors:
+                del self.region_monitors[region_id]
+                print(f"[MonitorTab] Removed monitor for region {region_id}")
+            else:
+                print(f"[MonitorTab] Warning: Region {region_id} monitor not found")
+
+            # 2. Remove region bbox
+            if region_id in self.regions:
+                del self.regions[region_id]
+                print(f"[MonitorTab] Removed region {region_id} bbox")
+
+            # 3. Remove latest image
+            if region_id in self.latest_region_images:
+                del self.latest_region_images[region_id]
+                print(f"[MonitorTab] Removed region {region_id} image")
+
+            # 4. Clear overlay for this region
+            self.app.overlay_service.clear_region_overlay(region_id)
+
+            # 5. Remove widget from UI
+            if region_id in self.region_widgets:
+                widget = self.region_widgets[region_id]
+                self.regions_layout.removeWidget(widget)
+                widget.deleteLater()
+                del self.region_widgets[region_id]
+                print(f"[MonitorTab] Removed region {region_id} widget")
+
+            # 6. Re-layout remaining widgets in grid
+            self._relayout_widgets()
+
+            # 7. Update status
+            remaining = len(self.region_monitors)
+            self.status_label.setText(f"Đang giám sát {remaining} vùng")
+            self.instruction_label.setText(f"✓ Đang giám sát {remaining} vùng - Click 'Chọn vùng mới' để thêm vùng")
+
+            print(f"[MonitorTab] Region {region_id} stopped. Remaining: {remaining}")
+
+            # 8. Stop all monitoring if no regions left
+            if remaining == 0:
+                print("[MonitorTab] No regions left, stopping monitoring...")
+                self.stop_monitoring()
+            else:
+                print(f"[MonitorTab] ✓ Successfully stopped region {region_id}")
+                print(f"[MonitorTab] ==========================================\n")
+
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"[MonitorTab] ❌ ERROR stopping region {region_id}:")
+            print(error_trace)
+            QMessageBox.critical(self, "Lỗi", f"Không thể dừng vùng {region_id}: {e}\n\nXem console để biết chi tiết.")
+
+    def _relayout_widgets(self):
+        """Re-arrange widgets in grid after removal"""
+        try:
+            # Remove all widgets from layout
+            for widget in self.region_widgets.values():
+                self.regions_layout.removeWidget(widget)
+
+            # Re-add in grid (3 columns)
+            for i, widget in enumerate(self.region_widgets.values()):
+                row = i // 3
+                col = i % 3
+                self.regions_layout.addWidget(widget, row, col)
+
+            print(f"[MonitorTab] Re-laid out {len(self.region_widgets)} widgets")
+
+        except Exception as e:
+            print(f"[MonitorTab] Error re-laying out widgets: {e}")
 
     def _update_thumbnails(self):
         """Update thumbnails from main thread (called by QTimer)"""
         try:
-            for idx in range(len(self.region_widgets)):
-                if idx < len(self.latest_region_images):
-                    image = self.latest_region_images[idx]
-                    if image and idx < len(self.region_widgets):
-                        self.region_widgets[idx].update_thumbnail(image)
+            # Iterate Dict by region_id
+            for region_id, image in self.latest_region_images.items():
+                if image and region_id in self.region_widgets:
+                    self.region_widgets[region_id].update_thumbnail(image)
         except Exception as e:
             print(f"[MonitorTab] Error in _update_thumbnails: {e}")
 
@@ -935,8 +1066,8 @@ class MonitorTab(QWidget):
                 start_time = time.time()
 
                 try:
-                    # Create snapshot of monitors to avoid race conditions when adding regions
-                    monitors_snapshot = list(self.region_monitors)
+                    # Create snapshot of monitors to avoid race conditions when adding/removing regions
+                    monitors_snapshot = dict(self.region_monitors)  # Dict copy, not list!
 
                     if not monitors_snapshot:
                         print(f"[MonitoringThread] No monitors found, waiting...")
@@ -947,13 +1078,13 @@ class MonitorTab(QWidget):
                     if loop_count % 50 == 1:
                         print(f"[MonitoringThread] Loop #{loop_count}, monitoring {len(monitors_snapshot)} regions...")
 
-                    # Monitor all regions
-                    for idx, monitor in enumerate(monitors_snapshot):
+                    # Monitor all regions (iterate Dict by region_id)
+                    for region_id, monitor in monitors_snapshot.items():
                         # Always capture current frame for thumbnail display
                         current_image = monitor.capture_current()
-                        if current_image and idx < len(self.latest_region_images):
-                            # Store latest image for thumbnail update (thread-safe list write)
-                            self.latest_region_images[idx] = current_image.copy()
+                        if current_image and region_id in self.latest_region_images:
+                            # Store latest image for thumbnail update (thread-safe dict write)
+                            self.latest_region_images[region_id] = current_image.copy()
 
                         # Check for changes
                         has_changed, changed_image = monitor.check_and_capture()
@@ -963,7 +1094,7 @@ class MonitorTab(QWidget):
                             scan_counter += 1
                             abs_bbox = monitor.get_absolute_bbox()
 
-                            print(f"\n[MonitoringThread] 🔥 Region {idx} CHANGED! Scan: {scan_counter}")
+                            print(f"\n[MonitoringThread] 🔥 Region ID={region_id} CHANGED! Scan: {scan_counter}")
 
                             if abs_bbox:
                                 # Convert abs_bbox (x, y, w, h) to region_coords (x1, y1, x2, y2)
@@ -971,12 +1102,12 @@ class MonitorTab(QWidget):
                                 region_coords = (abs_x, abs_y, abs_x + abs_w, abs_y + abs_h)
 
                                 print(f"[MonitoringThread] Sending to OCR processing...")
-                                print(f"  - Region index: {idx}")
+                                print(f"  - Region ID: {region_id}")
                                 print(f"  - Image size: {changed_image.size}")
                                 print(f"  - Region coords: {region_coords}")
 
-                                # Send to processing
-                                self.app.on_region_change(idx, changed_image, scan_counter, region_coords)
+                                # Send to processing (using region_id instead of idx)
+                                self.app.on_region_change(region_id, changed_image, scan_counter, region_coords)
 
                             # Update scan counter (thread-safe via signal)
                             self.scan_counter = scan_counter
@@ -1020,8 +1151,8 @@ class MonitorTab(QWidget):
             # Clear latest images
             self.latest_region_images.clear()
 
-            # Clear widgets
-            for widget in self.region_widgets:
+            # Clear widgets (iterate Dict values)
+            for widget in self.region_widgets.values():
                 self.regions_layout.removeWidget(widget)
                 widget.deleteLater()
             self.region_widgets.clear()

@@ -198,6 +198,44 @@ class OverlayService:
             except Exception as e:
                 print(f"[Overlay Service] Error clearing positioned overlay: {e}")
 
+    def clear_region_overlay(self, region_id: int):
+        """
+        Clear overlay for a specific region only (Thread-safe)
+
+        Args:
+            region_id: Region ID to remove
+        """
+        try:
+            # Thread-safe removal
+            with self._lock:
+                # Remove this region's text boxes
+                if region_id in self.positioned_text_boxes:
+                    removed_count = len(self.positioned_text_boxes[region_id])
+                    del self.positioned_text_boxes[region_id]
+                    print(f"[Overlay Service] Removed region {region_id} ({removed_count} boxes)")
+                else:
+                    print(f"[Overlay Service] Region {region_id} not found in overlay")
+                    return
+
+                # Flatten remaining text boxes from all other regions
+                all_boxes = []
+                for boxes in self.positioned_text_boxes.values():
+                    all_boxes.extend(boxes)
+
+            # Get overlay instance
+            if self.positioned_overlay:
+                # Update overlay with remaining boxes
+                self.positioned_overlay.update_text_boxes(all_boxes)
+                print(f"[Overlay Service] Updated overlay after removing region {region_id}")
+                print(f"  - Remaining: {len(all_boxes)} boxes from {len(self.positioned_text_boxes)} regions")
+            else:
+                print(f"[Overlay Service] No positioned overlay instance to update")
+
+        except Exception as e:
+            import traceback
+            print(f"[Overlay Service] Error clearing region {region_id} overlay:")
+            traceback.print_exc()
+
     def set_overlay_mode(self, mode: str):
         """
         Set overlay mode and switch between overlays
