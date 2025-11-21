@@ -2,6 +2,7 @@
 config.env
 .env
 *.env
+!config.env.example
 
 # Firebase secrets (CRITICAL - NEVER COMMIT)
 serviceAccountKey.json
