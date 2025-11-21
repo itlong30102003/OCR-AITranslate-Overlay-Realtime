@@ -60,6 +60,12 @@ coverage.xml
 local_settings.py
 db.sqlite3
 
+# Project specific data (user data, debug files)
+translation_history.db
+*.db
+debug_capture.png
+debug_ocr/
+
 # Flask stuff:
 instance/
 .webassets-cache
