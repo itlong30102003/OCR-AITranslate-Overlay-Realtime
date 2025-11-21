@@ -14,7 +14,11 @@
       "Bash(del:*)",
       "Bash(pkill:*)",
       "Bash(dir:*)",
-      "Bash(pip search:*)"
+      "Bash(pip search:*)",
+      "Bash(copy:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd secure environment variables management system\n\nSecurity improvements:\n- Add config.env.example template (safe to commit)\n- Update .gitignore to allow .example files\n- Create setup scripts (setup_env.bat, setup_env.ps1)\n- Add environment verification script (verify_env.py)\n- Add comprehensive SETUP_GUIDE.md with security best practices\n\nThis ensures API keys and secrets are never committed to git while\nproviding easy setup for new developers.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []

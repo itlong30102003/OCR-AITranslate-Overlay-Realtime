@@ -1,0 +1,265 @@
+{
+  "project_name": "OCR-AITranslate-Overlay-Realtime",
+  "technologies": {
+    "languages": ["Python 3.8+"],
+    "frameworks": [
+      "PyQt6 6.5.0+ (Modern UI)",
+      "Tkinter (Legacy overlays)",
+      "asyncio (Async processing)"
+    ],
+    "databases": [
+      "SQLite (Local history cache)",
+      "Firestore (Cloud sync)"
+    ],
+    "cloud_services": [
+      "Firebase Authentication",
+      "Firebase Firestore",
+      "Google Gemini 2.0 Flash-Lite API"
+    ],
+    "libraries": [
+      "pytesseract 0.3.10+ (OCR engine)",
+      "opencv-python 4.8.0+ (Image processing)",
+      "torch 2.8.0+ (PyTorch for NLLB)",
+      "transformers 4.57.0+ (HuggingFace models)",
+      "google-generativeai 0.8.5+ (Gemini API)",
+      "pywin32 306+ (Windows API - BitBlt/PrintWindow)",
+      "winrt-Windows.Graphics.Capture (WinRT capture)",
+      "Pillow 10.0.0+ (Image manipulation)",
+      "numpy 1.24.0+ (Array operations)",
+      "sentencepiece 0.2.1+ (Tokenization)",
+      "langdetect 1.0.9+ (Language detection)",
+      "firebase-admin 6.2.0+",
+      "Pyrebase4 4.7.0+",
+      "python-dotenv 1.0.0+"
+    ]
+  },
+  "models_ml": [
+    {
+      "name": "Google Gemini 2.0 Flash-Lite",
+      "path": "Cloud API (no local model)",
+      "format": "API",
+      "used_in": "serving",
+      "notes": "Primary translation model | FREE tier | 15 req/min, 1M tokens/day | High quality (confidence ~0.95) | Auto 60s cooldown on rate limit | Best for EN/JA/ZH/VI/FR"
+    },
+    {
+      "name": "Meta NLLB-200 Distilled (600M)",
+      "path": "HuggingFace Hub: facebook/nllb-200-distilled-600M",
+      "format": "pytorch",
+      "used_in": "serving",
+      "notes": "Secondary translation model | Local GPU inference | 200+ languages | Confidence ~0.8 | ~1.2GB VRAM | Thread-safe GPU lock | Fully offline"
+    },
+    {
+      "name": "OPUS-MT Models",
+      "path": "HuggingFace Hub: Helsinki-NLP/opus-mt-*",
+      "format": "pytorch",
+      "used_in": "serving",
+      "notes": "Tertiary fallback | Local inference | Limited language pairs | Moderate quality | Lightweight"
+    },
+    {
+      "name": "Tesseract OCR 4.0+",
+      "path": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe (hardcoded - RISK!)",
+      "format": "binary",
+      "used_in": "serving",
+      "notes": "OCR engine | Supports EN/VI/JA/ZH/FR | Confidence filtering (>60%) | Noise reduction | Pattern-based text validation"
+    }
+  ],
+  "features": [
+    {
+      "name": "Real-Time OCR & Translation Pipeline",
+      "module": "services/async_processing_service.py",
+      "endpoints": [],
+      "description": "Async pipeline: Window Capture → Change Detection (dHash) → OCR (Tesseract) → Translation (Gemini/NLLB/OPUS) → Overlay Display | Non-blocking, parallel processing"
+    },
+    {
+      "name": "Multi-Model Translation System",
+      "module": "translation/",
+      "endpoints": [],
+      "description": "Intelligent model selection with quality matrix | Auto-fallback chain: Gemini → NLLB → OPUS | LRU cache (1000 entries) | Confidence threshold (0.7) | Rate limiting & cooldown"
+    },
+    {
+      "name": "Multi-Region Window Monitoring",
+      "module": "capture/ + ui/tabs/monitor_tab.py",
+      "endpoints": [],
+      "description": "Select multiple regions per window | Interactive region selector | Live thumbnail previews | Individual start/stop | Window position tracking | PrintWindow API (no overlay interference)"
+    },
+    {
+      "name": "Firebase Authentication",
+      "module": "firebase/auth_service.py + ui/login_window.py",
+      "endpoints": ["/login", "/register", "/logout", "/forgot_password"],
+      "description": "Email/password registration | Session persistence (.session file) | Auto-login on restart | Password reset | Modular view architecture (Welcome/Login/Register/ForgotPassword)"
+    },
+    {
+      "name": "Translation History (Dual-Layer)",
+      "module": "firebase/local_history_service.py + firebase/history_service.py",
+      "endpoints": [],
+      "description": "Local: SQLite cache (fast access) | Cloud: Firestore (batch sync every 20 records or 10 min) | Fields: source, translation, languages, model, confidence, timestamp | Export to CSV | Search & delete"
+    },
+    {
+      "name": "Advanced Overlay System",
+      "module": "overlay/",
+      "endpoints": [],
+      "description": "2 modes: Positioned (text at original coordinates, PyQt6) & List (centralized window, Tkinter) | Subtitle positions: top/center/bottom | Font size & opacity customization | Always-on-top"
+    },
+    {
+      "name": "Modern UI (PyQt6)",
+      "module": "ui/",
+      "endpoints": [],
+      "description": "Frameless dark theme | Draggable window | Sidebar navigation | Floating toggle button | Monitor tab (window selection, region management) | History tab (view/search/export) | User profile"
+    }
+  ],
+  "architecture": "Service-Oriented Architecture with 4 layers: (1) UI Layer (PyQt6 main/login windows, tabs), (2) Service Layer (AppService orchestration, WindowService, AsyncProcessingService pipeline, OCRService, TranslationService, OverlayService), (3) Domain Layer (Translation Manager with model selection, OCR Engine, Window Capture Win32 API, Firebase Manager singleton), (4) Data Layer (LocalHistoryService SQLite + HistoryService Firestore with SyncService batch sync, AuthService). Data flow: User → MonitorTab → WindowCapture → Change Detection → AsyncProcessingService → parallel (OCR → Translation → History) → OverlayService → Display. Total: 10,346 lines of Python across 49 files.",
+  "important_files": [
+    {
+      "path": "main_with_ui.py",
+      "reason": "Main entry point (125 lines) | Initializes Firebase UI login flow | Creates MainWindow"
+    },
+    {
+      "path": "services/async_processing_service.py",
+      "reason": "Core async OCR+Translation pipeline (310 lines) | Orchestrates parallel execution | Saves history"
+    },
+    {
+      "path": "translation/translation_manager.py",
+      "reason": "Multi-model orchestration (290 lines) | Model selection logic | Fallback chain | LRU cache | Confidence routing"
+    },
+    {
+      "path": "capture/window_capture.py",
+      "reason": "Window capture engine (515 lines) | PrintWindow/BitBlt API | Change detection | Multi-region monitoring"
+    },
+    {
+      "path": "ui/main_window.py",
+      "reason": "Main application UI (389 lines) | Navigation | Tabs | Floating toggle | User profile | Logout"
+    },
+    {
+      "path": "firebase/local_history_service.py",
+      "reason": "Local SQLite history with sync (603 lines) | Fast cache | Batch sync triggers | Export to CSV"
+    },
+    {
+      "path": "ui/tabs/monitor_tab.py",
+      "reason": "Main OCR monitoring interface (~400+ lines) | Region selection | Thumbnails | Monitoring control"
+    },
+    {
+      "path": "ocr/ocr.py",
+      "reason": "Tesseract OCR wrapper (99 lines) | Advanced filtering | Noise reduction | Bounding box generation"
+    },
+    {
+      "path": "translation/gemini_translator.py",
+      "reason": "Google Gemini API integration (176 lines) | Primary translation model | Rate limiting | 60s cooldown"
+    },
+    {
+      "path": "firebase/firebase_manager.py",
+      "reason": "Singleton Firebase connection (72 lines) | Admin SDK + Pyrebase initialization | Centralized config"
+    }
+  ],
+  "gaps_and_risks": [
+    {
+      "type": "security",
+      "desc": "HARDCODED Tesseract path in ocr/ocr.py:5 → Breaks on different installations",
+      "severity": "critical"
+    },
+    {
+      "type": "security",
+      "desc": "serviceAccountKey.json exists on disk (in .gitignore but verify NEVER committed to git history)",
+      "severity": "high"
+    },
+    {
+      "type": "security",
+      "desc": ".session file contains Firebase refresh tokens (protected by .gitignore, but risk of token theft if accessed)",
+      "severity": "medium"
+    },
+    {
+      "type": "testing",
+      "desc": "ZERO automated tests (no pytest, unittest files) → High regression risk during refactoring",
+      "severity": "critical"
+    },
+    {
+      "type": "performance",
+      "desc": "NLLB-200 model consumes ~1.2GB VRAM → May conflict with GPU-intensive apps (no model unloading)",
+      "severity": "medium"
+    },
+    {
+      "type": "performance",
+      "desc": "translation_history.db (7.8 MB) has unbounded growth → No cleanup/archival strategy for old records",
+      "severity": "medium"
+    },
+    {
+      "type": "performance",
+      "desc": "Gemini rate limiting uses simple 1.5s delay + 60s cooldown → Should implement exponential backoff",
+      "severity": "low"
+    },
+    {
+      "type": "doc",
+      "desc": "Missing API docs for services, no ADRs (Architecture Decision Records), no deployment/packaging guide",
+      "severity": "medium"
+    },
+    {
+      "type": "doc",
+      "desc": "No user manual or contributing guidelines",
+      "severity": "low"
+    },
+    {
+      "type": "technical_debt",
+      "desc": "Legacy code not removed: screen_capture.py, tkinter_overlay.py, main.py (old entry point) → Maintenance burden",
+      "severity": "medium"
+    },
+    {
+      "type": "technical_debt",
+      "desc": "Mixed UI frameworks (PyQt6 + Tkinter) → Larger bundle size, complexity → Should migrate fully to PyQt6",
+      "severity": "medium"
+    },
+    {
+      "type": "technical_debt",
+      "desc": "No logging framework (print statements everywhere) → Difficult to debug production issues",
+      "severity": "high"
+    }
+  ],
+  "report_outline": [
+    {
+      "title": "Executive Summary",
+      "one_line": "Sophisticated real-time OCR translation overlay (10,346 lines Python) with 3-model AI system, Firebase integration, and modern PyQt6 UI - 70% production-ready"
+    },
+    {
+      "title": "Tech Stack",
+      "one_line": "Python 3.8+, PyQt6, Firebase (Auth+Firestore), Tesseract OCR, Google Gemini API, Meta NLLB-200, Windows API (BitBlt/PrintWindow)"
+    },
+    {
+      "title": "ML Models & AI Components",
+      "one_line": "3-tier translation system (Gemini 2.0 Flash → NLLB-200 600M → OPUS-MT) with quality matrix, auto-fallback, LRU cache, and confidence routing"
+    },
+    {
+      "title": "Core Features",
+      "one_line": "Async OCR pipeline, multi-region window monitoring, dual-layer history (SQLite+Firestore), positioned overlays, Firebase auth, change detection"
+    },
+    {
+      "title": "Architecture",
+      "one_line": "4-layer service-oriented design: UI (PyQt6) → Services (orchestration/pipeline) → Domain (models/capture/Firebase) → Data (SQLite+Firestore sync)"
+    },
+    {
+      "title": "Critical Files",
+      "one_line": "10 key files: main_with_ui.py (entry), async_processing_service.py (pipeline), translation_manager.py (AI routing), window_capture.py (Win32 API)"
+    },
+    {
+      "title": "Security Analysis",
+      "one_line": "Good practices (no hardcoded keys, .gitignore), but CRITICAL hardcoded Tesseract path breaks portability, serviceAccountKey.json must never be committed"
+    },
+    {
+      "title": "Testing & Quality",
+      "one_line": "ZERO tests (0% coverage) - critical gap for production | No logging framework (print statements only)"
+    },
+    {
+      "title": "Performance & Scalability",
+      "one_line": "GPU memory concern (1.2GB VRAM for NLLB), unbounded DB growth (7.8MB), simple rate limiting needs exponential backoff"
+    },
+    {
+      "title": "Technical Debt",
+      "one_line": "Legacy code not removed, mixed UI frameworks (PyQt6+Tkinter), TODO.md with unfinished refactoring, no deployment packaging"
+    },
+    {
+      "title": "Recommendations",
+      "one_line": "Priority fixes: (1) Remove hardcoded paths (2) Add unit tests (3) Implement logging (4) Package for distribution (5) DB cleanup strategy (6) Remove legacy code"
+    },
+    {
+      "title": "Production Readiness",
+      "one_line": "MVP complete for beta testing (functional, secure setup) but NOT production-ready (needs tests, packaging, hardening) - estimated 70% ready"
+    }
+  ]
+}
