@@ -55,8 +55,8 @@ def _image_to_lines(image: Image.Image):
         # Loại text quá ngắn không hợp lệ
         text_stripped = text.strip()
         if len(text_stripped) < 2:
-            # Nếu không phải chữ Nhật/Trung → bỏ
-            if not re.search(r'[\u4E00-\u9FFFぁ-んァ-ヶ]', text_stripped):
+            # Giữ lại nếu là chữ cái, số, hoặc chữ Nhật/Trung
+            if not re.search(r'[A-Za-zÀ-ỹ0-9\u4E00-\u9FFFぁ-んァ-ヶ]', text_stripped):
                 continue
 
             
