@@ -136,12 +136,12 @@ class RegionOverlay(QWidget):
             padding_x = 6
             padding_y = 3
 
-            # Background rect (fit to text, not full bbox)
-            bg_width = text_width + 2 * padding_x
+            # Background rect (expand horizontally if needed, keep left aligned)
+            bg_width = max(box_width, text_width + 2 * padding_x)  # Expand right if text is longer
             bg_height = text_height + 2 * padding_y
 
-            # Center background on original bbox
-            bg_x = local_x1 + (box_width - bg_width) / 2
+            # Left-align background to original bbox left, expand right if needed
+            bg_x = local_x1
             bg_y = local_y1 + (box_height - bg_height) / 2
 
             # Draw semi-transparent black background (only around text)
