@@ -1,8 +1,19 @@
 import pytesseract
 from PIL import ImageGrab, Image
 import re
+from ocr.smart_menu_detector import SmartMenuDetector
+
 # Đường dẫn Tesseract.exe
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+# Initialize Smart Menu Detector (singleton)
+_menu_detector = None
+
+def get_menu_detector():
+    global _menu_detector
+    if _menu_detector is None:
+        _menu_detector = SmartMenuDetector()
+    return _menu_detector
 
 def _image_to_lines(image: Image.Image):
     # 2. Config cho Tesseract
@@ -73,9 +84,42 @@ def _image_to_lines(image: Image.Image):
     return lines
 
 
-def run_ocr_on_image(image: Image.Image):
+def run_ocr_on_image(image: Image.Image, enable_menu_detection: bool = True):
     """Chạy OCR trên một ảnh vùng (PIL.Image)."""
-    return _image_to_lines(image)
+    lines = _image_to_lines(image)
+    
+    # Pre-process với Smart Menu Detector
+    if enable_menu_detection and lines:
+        detector = get_menu_detector()
+        # Convert format for detector
+        ocr_for_detector = {}
+        for line_id, line_data in lines.items():
+            ocr_for_detector[str(line_id)] = {
+                'text': line_data['text'],
+                'bbox': (line_data['x1'], line_data['y1'], line_data['x2'], line_data['y2'])
+            }
+        
+        # Process with menu detector (threshold=0.5)
+        processed = detector.process_ocr_results(ocr_for_detector, threshold=0.5)
+        
+        # Convert back to original format
+        new_lines = {}
+        for line_id, line_data in processed.items():
+            # Handle both list and string text format
+            text_list = line_data['text'] if isinstance(line_data['text'], list) else [line_data['text']]
+            bbox = line_data['bbox']
+            
+            new_lines[line_id] = {
+                'text': text_list,
+                'x1': bbox[0],
+                'y1': bbox[1],
+                'x2': bbox[2],
+                'y2': bbox[3]
+            }
+        
+        return new_lines
+    
+    return lines
 
 
 def run_ocr():
