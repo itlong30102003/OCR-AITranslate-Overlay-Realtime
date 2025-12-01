@@ -18,6 +18,8 @@ class TranslatedTextBox:
     region_coords: tuple
     model: str
     confidence: float
+    block_type: str = "mixed"  # Type from classifier: paragraph, ui_button, menu_horizontal, etc.
+    text_alignment: str = "left"  # Alignment: left, center, right
 
 
 class TranslationService:

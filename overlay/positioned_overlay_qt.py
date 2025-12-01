@@ -3,7 +3,7 @@
 from PyQt6.QtWidgets import QApplication, QWidget
 from PyQt6.QtCore import Qt, QTimer, QRectF, pyqtSignal, QObject
 from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetrics
-from typing import List
+from typing import List, Tuple
 import sys
 import threading
 
@@ -92,8 +92,24 @@ class RegionOverlay(QWidget):
             # Trigger repaint to update text positions
             self.update()
 
+    def _get_block_style(self, block_type: str) -> Tuple[Tuple[int, int, int, int], Tuple[int, int, int], str, int]:
+        """
+        Get style for block type
+        Returns: (bg_color_rgba, text_color_rgb, alignment, font_weight)
+        """
+        styles = {
+            'paragraph': ((255, 255, 255, 230), (0, 0, 0), 'left', QFont.Weight.Normal),
+            'ui_button': ((70, 130, 180, 240), (255, 255, 255), 'center', QFont.Weight.Bold),
+            'menu_horizontal': ((50, 50, 50, 200), (255, 255, 255), 'center', QFont.Weight.Bold),
+            'menu_vertical': ((50, 50, 50, 200), (255, 255, 255), 'left', QFont.Weight.Bold),
+            'heading': ((255, 215, 0, 220), (0, 0, 0), 'center', QFont.Weight.Bold),
+            'list_item': ((240, 240, 240, 210), (0, 0, 0), 'left', QFont.Weight.Normal),
+        }
+        # Default: semi-transparent black with white text
+        return styles.get(block_type, ((0, 0, 0, 180), (255, 255, 255), 'left', QFont.Weight.Bold))
+
     def paintEvent(self, _event):
-        """Custom paint event - draw individual text boxes with their own backgrounds (subtitle style)"""
+        """Custom paint event - draw individual text boxes with block-type aware styling"""
         print(f"[RegionOverlay] paintEvent called - drawing {len(self.region_boxes)} text boxes")
 
         painter = QPainter(self)
@@ -119,9 +135,16 @@ class RegionOverlay(QWidget):
             box_width = local_x2 - local_x1
             box_height = local_y2 - local_y1
 
-            # Set font size (smaller, fixed)
-            font_size = 12  # Fixed small font size
-            font = QFont('Arial', font_size, QFont.Weight.Bold)
+            # Get block type and style
+            block_type = getattr(tbox, 'block_type', 'mixed')
+            bg_color_rgba, text_color_rgb, alignment, font_weight = self._get_block_style(block_type)
+
+            # Set font based on block type
+            font_size = 12  # Base font size
+            # Increase font for headings
+            if block_type == 'heading':
+                font_size = 14
+            font = QFont('Arial', font_size, font_weight)
             painter.setFont(font)
 
             # Get text metrics
@@ -133,35 +156,49 @@ class RegionOverlay(QWidget):
             text_height = metrics.height()
 
             # Padding around text
-            padding_x = 6
-            padding_y = 3
+            padding_x = 8 if block_type in ['ui_button', 'menu_horizontal'] else 6
+            padding_y = 4 if block_type in ['ui_button', 'menu_horizontal'] else 3
 
-            # Background rect (expand horizontally if needed, keep left aligned)
-            bg_width = max(box_width, text_width + 2 * padding_x)  # Expand right if text is longer
+            # Background rect
+            bg_width = max(box_width, text_width + 2 * padding_x)
             bg_height = text_height + 2 * padding_y
 
-            # Left-align background to original bbox left, expand right if needed
-            bg_x = local_x1
+            # Position based on alignment
+            if alignment == 'center':
+                # Center the background
+                bg_x = local_x1 + (box_width - min(bg_width, box_width)) / 2
+            else:  # left or default
+                bg_x = local_x1
+
             bg_y = local_y1 + (box_height - bg_height) / 2
 
-            # Draw semi-transparent black background (only around text)
+            # Draw background with block-type color
             bg_rect = QRectF(bg_x, bg_y, bg_width, bg_height)
-            painter.fillRect(bg_rect, QColor(0, 0, 0, 180))  # 70% opacity
+            bg_color = QColor(*bg_color_rgba)
+            painter.fillRect(bg_rect, bg_color)
 
-            # Text position (centered in background)
-            text_x = bg_x + padding_x
+            # Text position
+            if alignment == 'center':
+                text_x = bg_x + (bg_width - text_width) / 2
+            else:
+                text_x = bg_x + padding_x
+
             text_y = bg_y + padding_y + metrics.ascent()
 
-            # Draw text with shadow for better readability
-            # Shadow
-            painter.setPen(QColor(0, 0, 0, 255))
-            painter.drawText(int(text_x + 1), int(text_y + 1), text)
+            # Draw text (no shadow for light backgrounds)
+            text_color = QColor(*text_color_rgb)
+            
+            # Add subtle shadow only for dark backgrounds
+            if bg_color_rgba[0] < 128:  # Dark background
+                shadow_color = QColor(0, 0, 0, 100)
+                painter.setPen(shadow_color)
+                painter.drawText(int(text_x + 1), int(text_y + 1), text)
 
-            # Main text (white)
-            painter.setPen(QColor(255, 255, 255, 255))
+            # Main text
+            painter.setPen(text_color)
             painter.drawText(int(text_x), int(text_y), text)
 
-        print(f"[RegionOverlay] Drew {len(self.region_boxes)} text boxes")
+        print(f"[RegionOverlay] Drew {len(self.region_boxes)} text boxes with smart styling")
         painter.end()
 
 
