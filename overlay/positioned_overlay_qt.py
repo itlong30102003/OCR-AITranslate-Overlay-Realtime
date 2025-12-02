@@ -60,7 +60,7 @@ class RegionOverlay(QWidget):
             Qt.WindowType.WindowTransparentForInput  # Click-through
         )
 
-        # Transparent background
+        # Fully transparent background - we'll only draw backgrounds for individual text boxes
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         # Set geometry to cover entire region
@@ -155,24 +155,24 @@ class RegionOverlay(QWidget):
             text_width = metrics.horizontalAdvance(text)
             text_height = metrics.height()
 
-            # Padding around text
-            padding_x = 8 if block_type in ['ui_button', 'menu_horizontal'] else 6
-            padding_y = 4 if block_type in ['ui_button', 'menu_horizontal'] else 3
+            # Padding around text - minimal but readable
+            padding_x = 6 if block_type in ['ui_button', 'menu_horizontal'] else 4
+            padding_y = 3 if block_type in ['ui_button', 'menu_horizontal'] else 2
 
-            # Background rect
-            bg_width = max(box_width, text_width + 2 * padding_x)
+            # Background rect - ONLY as wide as the text needs, not the full box
+            bg_width = text_width + 2 * padding_x
             bg_height = text_height + 2 * padding_y
 
-            # Position based on alignment
+            # Position based on alignment within the original box
             if alignment == 'center':
-                # Center the background
-                bg_x = local_x1 + (box_width - min(bg_width, box_width)) / 2
+                # Center the background within the original box area
+                bg_x = local_x1 + (box_width - bg_width) / 2
             else:  # left or default
                 bg_x = local_x1
 
             bg_y = local_y1 + (box_height - bg_height) / 2
 
-            # Draw background with block-type color
+            # Draw background with block-type color - only around the text
             bg_rect = QRectF(bg_x, bg_y, bg_width, bg_height)
             bg_color = QColor(*bg_color_rgba)
             painter.fillRect(bg_rect, bg_color)
