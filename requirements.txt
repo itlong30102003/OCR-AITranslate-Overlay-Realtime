@@ -12,6 +12,10 @@ requests>=2.31.0
 # OCR dependencies
 pytesseract>=0.3.10
 
+# Multi-language tokenizers (Option 1 - Lightweight)
+fugashi[unidic-lite]>=1.3.0  # Japanese tokenizer (~50MB)
+jieba>=0.42.1                # Chinese word segmentation (~10MB)
+
 # Translation engine dependencies
 google-generativeai>=0.8.5
 langdetect>=1.0.9
