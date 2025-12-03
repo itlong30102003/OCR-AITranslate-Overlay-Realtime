@@ -59,9 +59,9 @@ def _image_to_lines(image: Image.Image):
         if not text:
             continue
             
-        # Nếu text không chứa ký tự hợp lệ → bỏ
-        if not re.search(pattern, text):
-            continue
+        #  DISABLED: Pattern validation - too strict
+        # if not re.search(pattern, text):
+        #     continue
 
         # Loại text quá ngắn không hợp lệ
         text_stripped = text.strip()
