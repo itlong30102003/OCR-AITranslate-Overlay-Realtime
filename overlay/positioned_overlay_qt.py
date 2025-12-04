@@ -142,8 +142,9 @@ class RegionOverlay(QWidget):
             # Force left alignment as requested
             alignment = 'left'
             
-            # Use Times New Roman 12pt as requested
-            font = QFont('Times New Roman', 12, QFont.Weight.Bold)
+            # Use overlay config for font and colors
+            from config.overlay_config import overlay_config
+            font = QFont(overlay_config.font_family, overlay_config.font_size, QFont.Weight.Bold)
             painter.setFont(font)
 
             # Get text metrics
@@ -177,13 +178,15 @@ class RegionOverlay(QWidget):
             bg_width = available_width  # Full width for proper wrapping
             bg_height = actual_text_rect.height()  # Natural height of wrapped text
 
-            # Draw highlight-style background - extends downward as needed
+            # Draw highlight-style background - use config colors and opacity
+            bg_r, bg_g, bg_b, bg_alpha = overlay_config.get_background_color()
             bg_rect = QRectF(bg_x, bg_y, bg_width, bg_height)
-            bg_color = QColor(255, 255, 255, 230)  # White background with high opacity
+            bg_color = QColor(bg_r, bg_g, bg_b, bg_alpha)
             painter.fillRect(bg_rect, bg_color)
 
-            # Draw text - black color on white background
-            text_color = QColor(0, 0, 0)  # Black text
+            # Draw text - use config text color
+            text_r, text_g, text_b = overlay_config.get_text_color()
+            text_color = QColor(text_r, text_g, text_b)
             
             # Add subtle shadow for better readability
             shadow_color = QColor(128, 128, 128, 100)  # Gray shadow
