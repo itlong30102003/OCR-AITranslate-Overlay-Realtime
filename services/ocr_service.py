@@ -30,22 +30,29 @@ class ClassifiedTextBox(TextBox):
 class OCRService:
     """Service for handling OCR operations"""
 
-    def __init__(self, enable_tokenization: bool = True, enable_japanese_processing: bool = True):
+    def __init__(self, enable_tokenization: bool = True, enable_japanese_processing: bool = False, source_lang: str = 'auto'):
         """
         Initialize OCR Service
         
         Args:
             enable_tokenization: Whether to enable multi-language tokenization (default: True)
             enable_japanese_processing: Whether to enable Japanese character grouping (default: True)
+            source_lang: Source language for OCR optimization (auto, jpn, chi, eng, vie, fra)
         """
         self.classifier = WindowTextClassifier()
         self.enable_tokenization = enable_tokenization
         self.enable_japanese_processing = enable_japanese_processing
+        self.source_lang = source_lang
         
         # Lazy-load Japanese processor
         self._japanese_processor = None
         
-        print(f"[OCR Service] Initialized (Tokenization: {'ON' if enable_tokenization else 'OFF'}, Japanese Processing: {'ON' if enable_japanese_processing else 'OFF'})")
+        print(f"[OCR Service] Initialized (Tokenization: {'ON' if enable_tokenization else 'OFF'}, Japanese Processing: {'ON' if enable_japanese_processing else 'OFF'}, Language: {source_lang})")
+    
+    def set_source_language(self, lang: str):
+        """Update source language for OCR optimization"""
+        self.source_lang = lang
+        print(f"[OCR Service] Source language changed to: {lang}")
     
     @property
     def japanese_processor(self):
@@ -163,8 +170,8 @@ class OCRService:
             List of TextBox objects with absolute screen coordinates
         """
         try:
-            # Run OCR
-            lines = run_ocr_on_image(img)
+            # Run OCR with source language
+            lines = run_ocr_on_image(img, source_lang=self.source_lang)
             if not lines:
                 return []
 
@@ -396,8 +403,8 @@ class OCRService:
             List of ClassifiedTextBox objects with block type and confidence
         """
         try:
-            # Run OCR
-            ocr_results = run_ocr_on_image(img)
+            # Run OCR with source language
+            ocr_results = run_ocr_on_image(img, source_lang=self.source_lang)
             if not ocr_results:
                 return []
 

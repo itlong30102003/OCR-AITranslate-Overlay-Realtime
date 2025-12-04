@@ -150,9 +150,44 @@ class MonitorTab(QWidget):
         self.thumbnail_update_timer.setInterval(50)  # Update every 50ms for smoother display
 
         self.init_ui()
+    
+    def _on_source_language_changed(self, lang_name: str):
+        """Handle source language change"""
+        from config.language_config import LanguageConfig
+        lang_code = LanguageConfig.get_language_code(lang_name)
+        
+        # Update OCR service
+        if hasattr(self.app, 'ocr_service') and self.app.ocr_service:
+            self.app.ocr_service.set_source_language(lang_code)
+        
+        print(f"[MonitorTab] Source language changed to: {lang_name} ({lang_code})")
+    
+    def _on_target_language_changed(self, lang_name: str):
+        """Handle target language change"""
+        from config.language_config import LanguageConfig
+        lang_code = LanguageConfig.get_language_code(lang_name)
+        trans_code = LanguageConfig.get_translation_code(lang_code)
+        
+        # Update translation service (if exists)
+        if hasattr(self.app, 'translation_service') and self.app.translation_service:
+            self.app.translation_service.target_lang = trans_code
+            print(f"[MonitorTab] Translation target: {lang_name} ({lang_code} → {trans_code})")
+        
+        print(f"[MonitorTab] Target language changed to: {lang_name} ({lang_code})")
 
     def init_ui(self):
         """Khởi tạo UI đơn giản"""
+        # Set background gradient
+        self.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0f172a,
+                    stop:1 #1e293b
+                );
+            }
+        """)
+        
         # Main layout for the tab (contains scroll area)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)

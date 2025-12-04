@@ -139,64 +139,62 @@ class RegionOverlay(QWidget):
             block_type = getattr(tbox, 'block_type', 'mixed')
             bg_color_rgba, text_color_rgb, alignment, font_weight = self._get_block_style(block_type)
 
-            # Set font based on block type
-            font_size = 12  # Base font size
-            # Increase font for headings
-            if block_type == 'heading':
-                font_size = 14
-            font = QFont('Arial', font_size, font_weight)
+            # Force left alignment as requested
+            alignment = 'left'
+            
+            # Use Times New Roman 12pt as requested
+            font = QFont('Times New Roman', 12, QFont.Weight.Bold)
             painter.setFont(font)
 
             # Get text metrics
             metrics = QFontMetrics(font)
             text = tbox.translated_text
 
-            # Calculate text bounding box with padding
-            text_width = metrics.horizontalAdvance(text)
-            text_height = metrics.height()
+            # NO PADDING - as requested
+            padding_x = 0
+            padding_y = 0
 
-            # Padding around text - minimal but readable
-            padding_x = 6 if block_type in ['ui_button', 'menu_horizontal'] else 4
-            padding_y = 3 if block_type in ['ui_button', 'menu_horizontal'] else 2
+            # Use bbox width for wrapping (not overflow right)
+            # Allow text to extend DOWNWARD beyond bbox
+            available_width = box_width
+            
+            # Create bounding rect for text - use bbox width, unlimited height
+            text_rect = QRectF(local_x1, local_y1, available_width, 10000)
+            
+            # Text flags - left aligned WITH word wrap (allow vertical expansion)
+            from PyQt6.QtCore import Qt
+            text_flags = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap
+            
+            # Calculate actual text bounding box with wrapping
+            actual_text_rect = metrics.boundingRect(int(text_rect.x()), int(text_rect.y()), 
+                                                    int(text_rect.width()), int(text_rect.height()), 
+                                                    int(text_flags), text)
+            
+            # Background rect - ONLY highlight around actual wrapped text
+            # This will extend DOWNWARD if text is long
+            bg_x = local_x1
+            bg_y = local_y1
+            bg_width = available_width  # Full width for proper wrapping
+            bg_height = actual_text_rect.height()  # Natural height of wrapped text
 
-            # Background rect - ONLY as wide as the text needs, not the full box
-            bg_width = text_width + 2 * padding_x
-            bg_height = text_height + 2 * padding_y
-
-            # Position based on alignment within the original box
-            if alignment == 'center':
-                # Center the background within the original box area
-                bg_x = local_x1 + (box_width - bg_width) / 2
-            else:  # left or default
-                bg_x = local_x1
-
-            bg_y = local_y1 + (box_height - bg_height) / 2
-
-            # Draw background with block-type color - only around the text
+            # Draw highlight-style background - extends downward as needed
             bg_rect = QRectF(bg_x, bg_y, bg_width, bg_height)
-            bg_color = QColor(*bg_color_rgba)
+            bg_color = QColor(255, 255, 255, 230)  # White background with high opacity
             painter.fillRect(bg_rect, bg_color)
 
-            # Text position
-            if alignment == 'center':
-                text_x = bg_x + (bg_width - text_width) / 2
-            else:
-                text_x = bg_x + padding_x
-
-            text_y = bg_y + padding_y + metrics.ascent()
-
-            # Draw text (no shadow for light backgrounds)
-            text_color = QColor(*text_color_rgb)
+            # Draw text - black color on white background
+            text_color = QColor(0, 0, 0)  # Black text
             
-            # Add subtle shadow only for dark backgrounds
-            if bg_color_rgba[0] < 128:  # Dark background
-                shadow_color = QColor(0, 0, 0, 100)
-                painter.setPen(shadow_color)
-                painter.drawText(int(text_x + 1), int(text_y + 1), text)
+            # Add subtle shadow for better readability
+            shadow_color = QColor(128, 128, 128, 100)  # Gray shadow
+            painter.setPen(shadow_color)
+            shadow_rect = QRectF(bg_x + 1, bg_y + 1, bg_width, bg_height)
+            painter.drawText(shadow_rect, int(text_flags), text)
 
-            # Main text
+            # Main text with word wrap
             painter.setPen(text_color)
-            painter.drawText(int(text_x), int(text_y), text)
+            text_draw_rect = QRectF(bg_x, bg_y, bg_width, bg_height)
+            painter.drawText(text_draw_rect, int(text_flags), text)
 
         print(f"[RegionOverlay] Drew {len(self.region_boxes)} text boxes with smart styling")
         painter.end()

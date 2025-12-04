@@ -205,6 +205,78 @@ class TranslationService:
         except Exception as e:
             print(f"[Translation Service] Error translating text box: {e}")
             return None
+    
+    def _group_text_boxes_into_paragraphs(self, text_boxes: List) -> List:
+        """
+        Group consecutive text boxes into paragraphs based on Y-coordinate proximity
+        
+        Args:
+            text_boxes: List of TextBox objects
+            
+        Returns:
+            List of TextBox objects with merged text for paragraphs
+        """
+        if not text_boxes:
+            return []
+        
+        # Sort by Y coordinate (top to bottom)
+        sorted_boxes = sorted(text_boxes, key=lambda box: box.abs_bbox[1])
+        
+        groups = []
+        current_group = [sorted_boxes[0]]
+        
+        # Threshold for Y distance to consider same paragraph (pixels)
+        Y_THRESHOLD = 20  # Looser grouping - merge more lines together
+        
+        for i in range(1, len(sorted_boxes)):
+            prev_box = sorted_boxes[i-1]
+            curr_box = sorted_boxes[i]
+            
+            # Calculate Y distance between bottom of previous box and top of current box
+            prev_bottom = prev_box.abs_bbox[3]
+            curr_top = curr_box.abs_bbox[1]
+            y_distance = curr_top - prev_bottom
+            
+            # If close enough, add to current group
+            if y_distance <= Y_THRESHOLD:
+                current_group.append(curr_box)
+            else:
+                # Start new group
+                groups.append(current_group)
+                current_group = [curr_box]
+        
+        # Add last group
+        if current_group:
+            groups.append(current_group)
+        
+        # Merge each group into single TextBox
+        merged_boxes = []
+        for group in groups:
+            if len(group) == 1:
+                merged_boxes.append(group[0])
+            else:
+                # Merge text
+                merged_text = ' '.join(box.text for box in group)
+                
+                # Calculate bounding box that covers all boxes in group
+                min_x = min(box.abs_bbox[0] for box in group)
+                min_y = min(box.abs_bbox[1] for box in group)
+                max_x = max(box.abs_bbox[2] for box in group)
+                max_y = max(box.abs_bbox[3] for box in group)
+                
+                # Create merged TextBox (reuse first box's structure)
+                first_box = group[0]
+                from dataclasses import replace
+                merged_box = replace(
+                    first_box,
+                    text=merged_text,
+                    abs_bbox=(min_x, min_y, max_x, max_y)
+                )
+                merged_boxes.append(merged_box)
+                
+                print(f"[Translation Service] Merged {len(group)} lines into paragraph: {merged_text[:50]}...")
+        
+        return merged_boxes
 
     async def translate_text_boxes_async(self, text_boxes: List, scan_counter: int) -> List[TranslatedTextBox]:
         """
@@ -220,10 +292,12 @@ class TranslationService:
         if not self.translation_manager or not text_boxes:
             return []
 
+        # Group text boxes into paragraphs before translation
+        grouped_boxes = self._group_text_boxes_into_paragraphs(text_boxes)
+        
         # print(f"[Translation Service] Translating {len(text_boxes)} text boxes @ scan {scan_counter}...")
+        # print(f"[Translation Service] Grouped into {len(grouped_boxes)} paragraphs")
 
-        # Group text boxes by source language for batch optimization
-        # For now, translate all in parallel
         async def translate_box(text_box):
             """Translate a single TextBox"""
             try:
@@ -268,8 +342,8 @@ class TranslationService:
                     confidence=0.0
                 )
 
-        # Translate all text boxes in parallel
-        tasks = [translate_box(box) for box in text_boxes]
+        # Translate all grouped text boxes in parallel
+        tasks = [translate_box(box) for box in grouped_boxes]
         translated_boxes = await asyncio.gather(*tasks)
 
         # Log results

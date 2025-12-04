@@ -8,6 +8,7 @@ from PyQt6.QtCore import QSize
 from firebase.auth_service import FirebaseAuthService
 from ui.tabs.history_tab import HistoryTab
 from ui.tabs.monitor_tab import MonitorTab
+from ui.tabs.settings_tab import SettingsTab
 from ui.floating_control import FloatingControl
 
 
@@ -59,9 +60,11 @@ class MainWindow(QMainWindow):
         # Add tabs (Monitor tab is now the main/first tab)
         self.tab_monitor = MonitorTab(app_instance=self.app)
         self.tab_history = HistoryTab(user_id=self.user['localId'])
+        self.tab_settings = SettingsTab(app_instance=self.app)
 
         self.content_stack.addWidget(self.tab_monitor)
         self.content_stack.addWidget(self.tab_history)
+        self.content_stack.addWidget(self.tab_settings)
 
 
 
@@ -161,8 +164,9 @@ class MainWindow(QMainWindow):
 
         btn_monitor = self.create_nav_button("👁️  Giám sát", 0)
         btn_history = self.create_nav_button("📜  Lịch sử", 1)
+        btn_settings = self.create_nav_button("⚙️  Cài đặt", 2)
 
-        for btn in [btn_monitor, btn_history]:
+        for btn in [btn_monitor, btn_history, btn_settings]:
             self.nav_buttons.append(btn)
             layout.addWidget(btn)
 

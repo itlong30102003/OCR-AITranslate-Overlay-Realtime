@@ -1,8 +1,7 @@
-﻿import pytesseract
+import pytesseract
 from PIL import ImageGrab, Image
 import re
 from ocr.smart_menu_detector import SmartMenuDetector
-from config.language_config import LanguageConfig
 
 # Đường dẫn Tesseract.exe
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -16,9 +15,9 @@ def get_menu_detector():
         _menu_detector = SmartMenuDetector()
     return _menu_detector
 
-def _image_to_lines(image: Image.Image, source_lang: str = 'auto'):
-    # Get optimized Tesseract config based on source language
-    custom_config = LanguageConfig.get_ocr_config(source_lang)
+def _image_to_lines(image: Image.Image):
+    # 2. Config cho Tesseract
+    custom_config = r'--oem 1 --psm 6 -l eng+vie+jpn+chi_sim+fra'
     # 3. OCR lấy dữ liệu chi tiết
     data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
@@ -64,10 +63,14 @@ def _image_to_lines(image: Image.Image, source_lang: str = 'auto'):
         # if not re.search(pattern, text):
         #     continue
 
-        # REMOVED: Length validation - was filtering out punctuation and single digits
-        # Now keeping ALL text from Tesseract (after emoji removal)
+        # Loại text quá ngắn không hợp lệ
+        text_stripped = text.strip()
+        if len(text_stripped) < 2:
+            # Giữ lại nếu là chữ cái, số, hoặc chữ Nhật/Trung
+            if not re.search(r'[A-Za-zÀ-ỹ0-9\u4E00-\u9FFFぁ-んァ-ヶ]', text_stripped):
+                continue
+
             
-        
         
         if line_id not in lines:
             lines[line_id] = {"text": [], "x1": x, "y1": y, "x2": x+w, "y2": y+h}
@@ -81,9 +84,9 @@ def _image_to_lines(image: Image.Image, source_lang: str = 'auto'):
     return lines
 
 
-def run_ocr_on_image(image: Image.Image, enable_menu_detection: bool = True, source_lang: str = 'auto'):
+def run_ocr_on_image(image: Image.Image, enable_menu_detection: bool = True):
     """Chạy OCR trên một ảnh vùng (PIL.Image)."""
-    lines = _image_to_lines(image, source_lang=source_lang)
+    lines = _image_to_lines(image)
     
     # Pre-process với Smart Menu Detector
     if enable_menu_detection and lines:

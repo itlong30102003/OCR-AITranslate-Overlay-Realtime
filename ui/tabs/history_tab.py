@@ -25,6 +25,17 @@ class HistoryTab(QWidget):
 
     def init_ui(self):
         """Initialize UI"""
+        # Set background for the whole tab
+        self.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0f172a,
+                    stop:1 #1e293b
+                );
+            }
+        """)
+        
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 40, 40, 40)
         layout.setSpacing(20)
