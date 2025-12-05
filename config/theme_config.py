@@ -68,15 +68,25 @@ class ThemeConfig:
         colors = self.get_colors()
         
         return f"""
-            QWidget {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {colors['bg_primary']},
-                    stop:1 {colors['bg_secondary']}
-                );
+            /* Main Window */
+            QMainWindow {{
+                background-color: {colors['bg_primary']};
                 color: {colors['text_primary']};
             }}
             
+            /* General Widgets */
+            QWidget {{
+                background-color: {colors['bg_primary']};
+                color: {colors['text_primary']};
+            }}
+            
+            /* Labels */
+            QLabel {{
+                color: {colors['text_primary']};
+                background-color: transparent;
+            }}
+            
+            /* GroupBox */
             QGroupBox {{
                 font-size: 16px;
                 font-weight: bold;
@@ -92,8 +102,10 @@ class ThemeConfig:
                 subcontrol-origin: margin;
                 left: 15px;
                 padding: 0 5px;
+                color: {colors['text_primary']};
             }}
             
+            /* Buttons */
             QPushButton {{
                 background-color: {colors['accent']};
                 color: white;
@@ -107,7 +119,17 @@ class ThemeConfig:
                 background-color: {colors['accent_hover']};
             }}
             
-            QLineEdit, QComboBox {{
+            QPushButton:pressed {{
+                background-color: {colors['accent']};
+            }}
+            
+            QPushButton:disabled {{
+                background-color: {colors['border']};
+                color: {colors['text_muted']};
+            }}
+            
+            /* Line Edit */
+            QLineEdit {{
                 background-color: {colors['bg_tertiary']};
                 color: {colors['text_primary']};
                 border: 1px solid {colors['border']};
@@ -115,10 +137,53 @@ class ThemeConfig:
                 padding: 8px 12px;
             }}
             
-            QLabel {{
-                color: {colors['text_primary']};
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
             }}
             
+            /* ComboBox */
+            QComboBox {{
+                background-color: {colors['bg_tertiary']};
+                color: {colors['text_primary']};
+                border: 1px solid {colors['border']};
+                border-radius: 5px;
+                padding: 8px 12px;
+            }}
+            
+            QComboBox:hover {{
+                border: 1px solid {colors['accent']};
+            }}
+            
+            QComboBox::drop-down {{
+                border: none;
+            }}
+            
+            QComboBox QAbstractItemView {{
+                background-color: {colors['bg_tertiary']};
+                color: {colors['text_primary']};
+                border: 1px solid {colors['border']};
+                selection-background-color: {colors['accent']};
+            }}
+            
+            /* Slider */
+            QSlider::groove:horizontal {{
+                background: {colors['border']};
+                height: 6px;
+                border-radius: 3px;
+            }}
+            
+            QSlider::handle:horizontal {{
+                background: {colors['accent']};
+                width: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+            }}
+            
+            QSlider::handle:horizontal:hover {{
+                background: {colors['accent_hover']};
+            }}
+            
+            /* Table Widget */
             QTableWidget {{
                 background-color: {colors['bg_tertiary']};
                 border: 1px solid {colors['border']};
@@ -126,12 +191,86 @@ class ThemeConfig:
                 gridline-color: {colors['border']};
             }}
             
+            QTableWidget::item {{
+                color: {colors['text_primary']};
+            }}
+            
+            QTableWidget::item:selected {{
+                background-color: {colors['accent']};
+                color: white;
+            }}
+            
             QHeaderView::section {{
-                background-color: {colors['bg_primary']};
-                color: {colors['text_muted']};
+                background-color: {colors['bg_secondary']};
+                color: {colors['text_secondary']};
                 padding: 10px;
                 border: none;
                 font-weight: bold;
+            }}
+            
+            /* ScrollBar */
+            QScrollBar:vertical {{
+                background: {colors['bg_secondary']};
+                width: 12px;
+                border-radius: 6px;
+            }}
+            
+            QScrollBar::handle:vertical {{
+                background: {colors['border']};
+                border-radius: 6px;
+                min-height: 20px;
+            }}
+            
+            QScrollBar::handle:vertical:hover {{
+                background: {colors['accent']};
+            }}
+            
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            
+            /* Tab Widget */
+            QTabWidget::pane {{
+                border: 1px solid {colors['border']};
+                background-color: {colors['bg_secondary']};
+            }}
+            
+            QTabBar::tab {{
+                background-color: {colors['bg_tertiary']};
+                color: {colors['text_secondary']};
+                padding: 10px 20px;
+                border: 1px solid {colors['border']};
+            }}
+            
+            QTabBar::tab:selected {{
+                background-color: {colors['accent']};
+                color: white;
+            }}
+            
+            QTabBar::tab:hover {{
+                background-color: {colors['bg_secondary']};
+            }}
+            
+            /* Text Edit */
+            QTextEdit, QPlainTextEdit {{
+                background-color: {colors['bg_tertiary']};
+                color: {colors['text_primary']};
+                border: 1px solid {colors['border']};
+                border-radius: 5px;
+            }}
+            
+            /* Progress Bar */
+            QProgressBar {{
+                background-color: {colors['bg_tertiary']};
+                border: 1px solid {colors['border']};
+                border-radius: 5px;
+                text-align: center;
+                color: {colors['text_primary']};
+            }}
+            
+            QProgressBar::chunk {{
+                background-color: {colors['accent']};
+                border-radius: 5px;
             }}
         """
 

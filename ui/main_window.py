@@ -1,301 +1,235 @@
-"""Main Window - Main application window with tabs"""
+"""Main Window - Main application window with header and tabs"""
 
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QPushButton, QStackedWidget, QMessageBox, QApplication)
+                             QLabel, QPushButton, QTabWidget, QMessageBox, QApplication)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtCore import QSize
 from firebase.auth_service import FirebaseAuthService
 from ui.tabs.history_tab import HistoryTab
-from ui.tabs.monitor_tab import MonitorTab
+from ui.tabs.main_tab import MainTab
 from ui.tabs.settings_tab import SettingsTab
-from ui.floating_control import FloatingControl
+from config import new_theme as theme
 
 
 class MainWindow(QMainWindow):
-    """Main application window with sidebar navigation"""
+    """Main application window with header and tab navigation"""
 
     def __init__(self, user, app_instance):
         super().__init__()
         self.user = user
-        self.app = app_instance  # Reference to OCRTranslationApp
+        self.app = app_instance
         self.auth_service = FirebaseAuthService()
         self.init_ui()
 
     def init_ui(self):
         """Initialize UI"""
         self.setWindowTitle("AI Overlay Translate")
-        self.resize(1024, 576)  # Default size
-        # self.setMinimumSize(1000, 700)  # Smaller minimum size
+        self.setGeometry(100, 100, 1200, 800)
 
-        # Remove window frame (title bar, borders) for frameless window
+        # Remove window frame for frameless window
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
         # Apply dark theme
-        self.setStyleSheet(self.get_dark_theme())
+        self.setStyleSheet(f"""
+            QMainWindow {{
+                background-color: {theme.BG_PRIMARY};
+            }}
+            QWidget {{
+                color: {theme.TEXT_PRIMARY};
+            }}
+        """)
 
         # Central widget
         central = QWidget()
         self.setCentralWidget(central)
 
-        # Main layout: UI + Toggle Button on the right
-        layout = QHBoxLayout(central)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)  # Add some spacing between UI and button
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # Create the main UI widget (entire interface)
-        self.my_ui_widget = QWidget()
-        ui_layout = QHBoxLayout(self.my_ui_widget)
-        ui_layout.setContentsMargins(0, 0, 0, 0)
-        ui_layout.setSpacing(0)
+        # Header
+        header = self._create_header()
+        main_layout.addWidget(header)
 
-        # Sidebar
-        self.sidebar = self.create_sidebar()
-        ui_layout.addWidget(self.sidebar)
+        # Tab widget
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(theme.get_tab_style())
 
-        # Content stack (different tabs)
-        self.content_stack = QStackedWidget()
-        ui_layout.addWidget(self.content_stack)
-
-        # Add tabs (Monitor tab is now the main/first tab)
-        self.tab_monitor = MonitorTab(app_instance=self.app)
-        self.tab_history = HistoryTab(user_id=self.user['localId'])
+        # Create tabs
+        self.tab_main = MainTab(app_instance=self.app)
         self.tab_settings = SettingsTab(app_instance=self.app)
+        self.tab_history = HistoryTab(user_id=self.user['localId'])
 
-        self.content_stack.addWidget(self.tab_monitor)
-        self.content_stack.addWidget(self.tab_history)
-        self.content_stack.addWidget(self.tab_settings)
+        self.tabs.addTab(self.tab_main, "Chính")
+        self.tabs.addTab(self.tab_settings, "Cài đặt")
+        self.tabs.addTab(self.tab_history, "Lịch sử")
 
+        main_layout.addWidget(self.tabs)
 
-
-        layout.addWidget(self.my_ui_widget)
-
-        # No opacity effect needed for basic toggle
-
-        # Create separate floating toggle button (not part of main layout)
-        self.toggle_ui_btn = QPushButton()
-        self.toggle_ui_btn.setFixedSize(50, 50)
-
-        # Set icon from Icons/App.png
-        icon_pixmap = QPixmap("Icons/App.png")
-        if not icon_pixmap.isNull():
-            # Fixed icon size 47x47
-            self.toggle_ui_btn.setIcon(QIcon(icon_pixmap))
-            self.toggle_ui_btn.setIconSize(QSize(50,50))
-
-        # self.toggle_ui_btn.setStyleSheet("""
-        #     QPushButton {
-        #         border: none;
-        #         background: transparent;
-        #     }
-        # """)
-        self.toggle_ui_btn.clicked.connect(self._toggle_ui_visibility)
-        self.toggle_ui_btn.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
-        self.toggle_ui_btn.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        # Initially show the floating button in bottom-right corner (moved up 40px)
-        screen = QApplication.primaryScreen()
-        screen_geometry = screen.geometry()
-        self.toggle_ui_btn.move(screen_geometry.width() - 50, screen_geometry.height() - 120)
-        self.toggle_ui_btn.show()
-        self.toggle_ui_btn.raise_()
-        self.toggle_ui_btn.activateWindow()
+        # Floating toggle button
+        self._create_floating_toggle()
 
         # Make main window draggable
         self.dragging = False
         self.offset = None
 
+        # UI visibility state
+        self.ui_visible = True
+        self.original_position = None
+
+    def _create_header(self):
+        """Create header with logo, status, and window controls"""
+        header = QWidget()
+        header.setFixedHeight(50)
+        header.setStyleSheet(f"""
+            background-color: {theme.BG_SECONDARY};
+            border-bottom: 1px solid {theme.BORDER_DEFAULT};
+        """)
+
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(15, 0, 15, 0)
+
+        # Logo badge
+        logo_label = QLabel("AI")
+        logo_label.setStyleSheet(f"""
+            background-color: {theme.ACCENT_PRIMARY};
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 5px 10px;
+            border-radius: 5px;
+        """)
+
+        # Title
+        title = QLabel("AI Overlay Translate")
+        title.setStyleSheet(f"font-weight: bold; font-size: 14px; margin-left: 10px; color: {theme.TEXT_PRIMARY};")
+
+        # Status badge
+        self.status_badge = QLabel("● Online")
+        self.status_badge.setStyleSheet(f"""
+            background-color: {theme.SUCCESS};
+            color: white;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 10px;
+            margin-left: 10px;
+        """)
+
+        layout.addWidget(logo_label)
+        layout.addWidget(title)
+        layout.addWidget(self.status_badge)
+        layout.addStretch()
+
+        # User email
+        user_email = QLabel(self.user.get('email', 'User'))
+        user_email.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 12px; margin-right: 15px;")
+        layout.addWidget(user_email)
+
+        # Logout button
+        logout_btn = QPushButton("Đăng xuất")
+        logout_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {theme.BG_TERTIARY};
+                color: {theme.TEXT_PRIMARY};
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-size: 11px;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.ERROR};
+            }}
+        """)
+        logout_btn.clicked.connect(self.handle_logout)
+        layout.addWidget(logout_btn)
+
+        # Window controls
+        min_btn = QPushButton("−")
+        max_btn = QPushButton("□")
+        close_btn = QPushButton("×")
+
+        for btn in [min_btn, max_btn, close_btn]:
+            btn.setFixedSize(35, 35)
+            btn.setStyleSheet(theme.get_window_button_style())
+
+        close_btn.setStyleSheet(theme.get_close_button_style())
+
+        min_btn.clicked.connect(self.showMinimized)
+        max_btn.clicked.connect(self._toggle_maximize)
+        close_btn.clicked.connect(self.close)
+
+        layout.addWidget(min_btn)
+        layout.addWidget(max_btn)
+        layout.addWidget(close_btn)
+
+        return header
+
+    def _create_floating_toggle(self):
+        """Create floating toggle button"""
+        self.toggle_ui_btn = QPushButton()
+        self.toggle_ui_btn.setFixedSize(50, 50)
+
+        # Set icon
+        icon_pixmap = QPixmap("Icons/App.png")
+        if not icon_pixmap.isNull():
+            self.toggle_ui_btn.setIcon(QIcon(icon_pixmap))
+            self.toggle_ui_btn.setIconSize(QSize(50, 50))
+
+        self.toggle_ui_btn.clicked.connect(self._toggle_ui_visibility)
+        self.toggle_ui_btn.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Tool
+        )
+        self.toggle_ui_btn.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        # Position in bottom-right corner
+        screen = QApplication.primaryScreen()
+        screen_geometry = screen.geometry()
+        self.toggle_ui_btn.move(screen_geometry.width() - 50, screen_geometry.height() - 120)
+        self.toggle_ui_btn.show()
+        self.toggle_ui_btn.raise_()
+
         # Make toggle button draggable
         self.toggle_dragging = False
         self.toggle_offset = None
-
-        # Connect toggle button mouse events for dragging
         self.toggle_ui_btn.mousePressEvent = self._toggle_mouse_press
         self.toggle_ui_btn.mouseMoveEvent = self._toggle_mouse_move
         self.toggle_ui_btn.mouseReleaseEvent = self._toggle_mouse_release
 
-        # Initialize UI visibility state
-        self.ui_visible = True
-
-        # Store original window position for restore
-        self.original_position = None
-
-        # Select first tab
-        self.switch_tab(0)
-
-    def create_sidebar(self):
-        """Create left sidebar navigation"""
-        sidebar = QWidget()
-        sidebar.setFixedWidth(220)
-        sidebar.setObjectName("sidebar")
-        sidebar.setStyleSheet("""
-            #sidebar {
-                background-color: #1a1f2e;
-                border-right: 1px solid #2a2f3e;
-            }
-        """)
-
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 20, 0, 20)
-        layout.setSpacing(0)
-
-        # App logo/title
-        title_widget = QWidget()
-        title_layout = QVBoxLayout(title_widget)
-        title_layout.setContentsMargins(20, 0, 20, 20)
-
-        title = QLabel("AI Overlay\nTranslate")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #ffffff;")
-        title_layout.addWidget(title)
-
-        # Status indicator
-        status = QLabel("● Online")
-        status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        status.setStyleSheet("color: #10b981; font-size: 12px; margin-top: 5px;")
-        title_layout.addWidget(status)
-
-        layout.addWidget(title_widget)
-
-        layout.addSpacing(20)
-
-        # Navigation buttons
-        self.nav_buttons = []
-
-        btn_monitor = self.create_nav_button("👁️  Giám sát", 0)
-        btn_history = self.create_nav_button("📜  Lịch sử", 1)
-        btn_settings = self.create_nav_button("⚙️  Cài đặt", 2)
-
-        for btn in [btn_monitor, btn_history, btn_settings]:
-            self.nav_buttons.append(btn)
-            layout.addWidget(btn)
-
-        layout.addStretch()
-
-        # User profile at bottom
-        user_widget = QWidget()
-        user_widget.setStyleSheet("""
-            QWidget {
-                background-color: #252a3a;
-                border-top: 1px solid #2a2f3e;
-            }
-        """)
-        user_layout = QVBoxLayout(user_widget)
-        user_layout.setContentsMargins(15, 15, 15, 15)
-
-        user_email = QLabel(self.user.get('email', 'User'))
-        user_email.setStyleSheet("color: #e5e7eb; font-size: 12px; font-weight: bold;")
-        user_email.setWordWrap(True)
-        user_layout.addWidget(user_email)
-
-        logout_btn = QPushButton("Đăng xuất")
-        logout_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #374151;
-                color: white;
-                border: none;
-                padding: 8px;
-                border-radius: 4px;
-                font-size: 11px;
-                margin-top: 5px;
-            }
-            QPushButton:hover {
-                background-color: #4b5563;
-            }
-        """)
-        logout_btn.clicked.connect(self.handle_logout)
-        user_layout.addWidget(logout_btn)
-
-        layout.addWidget(user_widget)
-
-        return sidebar
-
-    def create_nav_button(self, text, index):
-        """Create navigation button"""
-        btn = QPushButton(text)
-        btn.setObjectName(f"nav-button-{index}")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #9ca3af;
-                border: none;
-                padding: 15px 20px;
-                text-align: left;
-                font-size: 14px;
-                border-left: 3px solid transparent;
-            }
-            QPushButton:hover {
-                background-color: #252a3a;
-                color: #ffffff;
-            }
-        """)
-        btn.clicked.connect(lambda: self.switch_tab(index))
-        return btn
-
-    def switch_tab(self, index):
-        """Switch to tab and highlight nav button"""
-        self.content_stack.setCurrentIndex(index)
-
-        # Update button styles
-        for i, btn in enumerate(self.nav_buttons):
-            if i == index:
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #252a3a;
-                        color: #ffffff;
-                        border: none;
-                        padding: 15px 20px;
-                        text-align: left;
-                        font-size: 14px;
-                        border-left: 3px solid #2563eb;
-                    }
-                """)
-            else:
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: transparent;
-                        color: #9ca3af;
-                        border: none;
-                        padding: 15px 20px;
-                        text-align: left;
-                        font-size: 14px;
-                        border-left: 3px solid transparent;
-                    }
-                    QPushButton:hover {
-                        background-color: #252a3a;
-                        color: #ffffff;
-                    }
-                """)
-
+    def _toggle_maximize(self):
+        """Toggle maximize window"""
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
 
     def handle_logout(self):
         """Handle logout"""
         reply = QMessageBox.question(
             self,
-            "Logout",
-            "Are you sure you want to logout?",
+            "Đăng xuất",
+            "Bạn có chắc muốn đăng xuất không?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            # Sync any pending changes to Firestore before logout
+            # Sync before logout
             if hasattr(self.app, 'sync_service') and self.app.sync_service:
-                print("[Logout] Syncing pending changes to Firestore...")
                 self.app.sync_service.force_sync_now()
-                # Give some time for sync to complete
                 import time
                 time.sleep(2)
 
-            # Clear local history for current user
+            # Clear local history
             if hasattr(self.app, 'local_history') and self.app.local_history and self.user:
                 self.app.local_history.clear_user_history(self.user['localId'])
-                print(f"[Logout] Cleared local history for user {self.user.get('email')}")
 
             self.auth_service.logout()
-            QMessageBox.information(self, "Logged Out", "You have been logged out successfully")
+            QMessageBox.information(self, "Đăng xuất", "Đăng xuất thành công!")
             self.close()
 
-            # Show login window again
+            # Show login window
             from ui.login_window import LoginWindow
             self.login_window = LoginWindow()
             self.login_window.show()
@@ -312,13 +246,10 @@ class MainWindow(QMainWindow):
     def _toggle_ui_visibility(self):
         """Toggle UI widget visibility"""
         if self.ui_visible:
-            # Store current position before hiding
             self.original_position = self.pos()
-            # Hide UI immediately
             self.hide()
             self.ui_visible = False
         else:
-            # Show UI immediately
             self.show()
             self.raise_()
             self.activateWindow()
@@ -344,21 +275,19 @@ class MainWindow(QMainWindow):
             self.offset = None
 
     def _toggle_mouse_press(self, event):
-        """Handle mouse press for dragging toggle button"""
+        """Handle mouse press for toggle button"""
         if event.button() == Qt.MouseButton.LeftButton:
-            # Check if this is a click (small movement) or drag start
             self.toggle_drag_start_pos = event.pos()
-            self.toggle_dragging = False  # Will be set to True on move if it's a drag
+            self.toggle_dragging = False
             self.toggle_offset = event.pos()
 
     def _toggle_mouse_move(self, event):
-        """Handle mouse move for dragging toggle button"""
+        """Handle mouse move for toggle button"""
         if not self.toggle_dragging:
-            # Check if movement is significant enough to start dragging
             if hasattr(self, 'toggle_drag_start_pos'):
                 dx = abs(event.pos().x() - self.toggle_drag_start_pos.x())
                 dy = abs(event.pos().y() - self.toggle_drag_start_pos.y())
-                if dx > 5 or dy > 5:  # 5 pixel threshold
+                if dx > 5 or dy > 5:
                     self.toggle_dragging = True
 
         if self.toggle_dragging and self.toggle_offset:
@@ -368,25 +297,8 @@ class MainWindow(QMainWindow):
         """Handle mouse release for toggle button"""
         if event.button() == Qt.MouseButton.LeftButton:
             if not self.toggle_dragging:
-                # This was a click, not a drag - trigger toggle
                 self._toggle_ui_visibility()
             self.toggle_dragging = False
             self.toggle_offset = None
             if hasattr(self, 'toggle_drag_start_pos'):
                 delattr(self, 'toggle_drag_start_pos')
-
-    # Removed fade animation methods - using basic toggle now
-
-    def get_dark_theme(self):
-        """Dark theme stylesheet"""
-        return """
-        QMainWindow {
-            background-color: #0f1419;
-        }
-        QWidget {
-            color: #e5e7eb;
-        }
-        QLabel {
-            color: #e5e7eb;
-        }
-        """
