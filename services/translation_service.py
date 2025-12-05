@@ -1,6 +1,7 @@
 """Translation Service - Handles translation operations"""
 
 import asyncio
+import time
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 from translation import TranslationManager
@@ -189,6 +190,9 @@ class TranslationService:
             return None
 
         try:
+            # Start timing
+            start_time = time.time()
+            
             # Use preferred model if specified
             result = None
             if self.preferred_model:
@@ -199,6 +203,16 @@ class TranslationService:
             # Fallback to auto model selection
             if result is None:
                 result = self.translation_manager.translate(text, self.source_lang, self.target_lang)
+
+            # Record translation time to SystemMonitor
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            try:
+                from services.system_monitor import get_system_monitor
+                monitor = get_system_monitor()
+                if monitor:
+                    monitor.record_translation_time(elapsed_ms)
+            except:
+                pass
 
             return result
 

@@ -13,6 +13,7 @@ from typing import Tuple, Dict, Optional
 from ui.components.modern_toggle import ModernToggle
 from config import new_theme as theme
 from capture.window_capture import WindowRegionMonitor, WindowCapture
+from services.system_monitor import get_system_monitor
 
 
 class RegionThumbnail(QFrame):
@@ -132,16 +133,21 @@ class MainTab(QWidget):
         self.is_monitoring = False
         self.monitoring_thread = None
 
-        # Performance metrics
-        self.translation_speed_ms = 20
-        self.cache_percent = 86
-        self.cpu_percent = 4
-        self.gpu_percent = 12
+        # Performance metrics (will be updated from SystemMonitor)
+        self.translation_speed_ms = 0
+        self.memory_percent = 0
+        self.cpu_percent = 0
+        self.gpu_percent = 0
 
         # Thumbnail update timer
         self.thumbnail_update_timer = QTimer()
         self.thumbnail_update_timer.timeout.connect(self._update_thumbnails)
         self.thumbnail_update_timer.setInterval(50)
+
+        # Start system monitor and connect signal
+        self.system_monitor = get_system_monitor()
+        self.system_monitor.start()
+        self.system_monitor.metrics_updated.connect(self._on_metrics_updated)
 
         self.init_ui()
 
@@ -225,10 +231,10 @@ class MainTab(QWidget):
 
         # Performance metrics
         metrics = [
-            ("Hiệu suất dịch", f"{self.translation_speed_ms}ms", 40, theme.ACCENT_PRIMARY),
-            ("Bộ nhớ đệm", f"{self.cache_percent}%", self.cache_percent, theme.SUCCESS),
-            ("Tải CPU", f"{self.cpu_percent}%", self.cpu_percent, theme.INFO),
-            ("Tài nguyên GPU", f"{self.gpu_percent}%", self.gpu_percent, theme.ACCENT_PURPLE)
+            ("Hiệu suất dịch", f"{self.translation_speed_ms}ms", 0, theme.ACCENT_PRIMARY),
+            ("Bộ nhớ (RAM)", f"{self.memory_percent}%", 0, theme.SUCCESS),
+            ("Tải CPU", f"{self.cpu_percent}%", 0, theme.INFO),
+            ("Tài nguyên GPU", f"{self.gpu_percent}%", 0, theme.ACCENT_PURPLE)
         ]
 
         self.metric_labels = {}
@@ -549,9 +555,38 @@ class MainTab(QWidget):
     def _update_scan_label(self, counter: int):
         """Update scan label"""
         self.scan_label.setText(f"Scan: {counter}")
-        # Update translation speed metric
-        if "Hiệu suất dịch" in self.metric_labels:
-            self.metric_labels["Hiệu suất dịch"].setText(f"{self.translation_speed_ms}ms")
+
+    def _on_metrics_updated(self, metrics):
+        """Handle system metrics update from SystemMonitor"""
+        try:
+            # Update stored values
+            self.cpu_percent = metrics.cpu_percent
+            self.memory_percent = metrics.memory_percent
+            self.gpu_percent = metrics.gpu_percent
+            self.translation_speed_ms = metrics.translation_speed_ms
+
+            # Update UI labels and bars
+            if "Tải CPU" in self.metric_labels:
+                self.metric_labels["Tải CPU"].setText(f"{self.cpu_percent:.0f}%")
+                self.metric_bars["Tải CPU"].setValue(int(self.cpu_percent))
+
+            if "Bộ nhớ (RAM)" in self.metric_labels:
+                self.metric_labels["Bộ nhớ (RAM)"].setText(f"{self.memory_percent:.0f}%")
+                self.metric_bars["Bộ nhớ (RAM)"].setValue(int(self.memory_percent))
+
+            if "Tài nguyên GPU" in self.metric_labels:
+                self.metric_labels["Tài nguyên GPU"].setText(f"{self.gpu_percent:.0f}%")
+                self.metric_bars["Tài nguyên GPU"].setValue(int(self.gpu_percent))
+
+            if "Hiệu suất dịch" in self.metric_labels:
+                speed_text = f"{self.translation_speed_ms}ms" if self.translation_speed_ms > 0 else "--"
+                self.metric_labels["Hiệu suất dịch"].setText(speed_text)
+                # Map speed to progress: 0ms = 100%, 100ms = 0%
+                speed_progress = max(0, min(100, 100 - self.translation_speed_ms))
+                self.metric_bars["Hiệu suất dịch"].setValue(speed_progress)
+
+        except Exception as e:
+            print(f"[MainTab] Error updating metrics: {e}")
 
     def _update_thumbnails(self):
         """Update thumbnails from main thread"""
