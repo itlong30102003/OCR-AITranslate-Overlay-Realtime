@@ -14,6 +14,7 @@ from ui.components.modern_toggle import ModernToggle
 from config import new_theme as theme
 from capture.window_capture import WindowRegionMonitor, WindowCapture
 from services.system_monitor import get_system_monitor
+from config.language_config import LanguageConfig
 
 
 class RegionThumbnail(QFrame):
@@ -331,7 +332,8 @@ class MainTab(QWidget):
         source_label = QLabel("Ngôn ngữ nguồn")
         source_label.setStyleSheet(f"font-size: 11px; color: {theme.TEXT_SECONDARY}; margin-bottom: 5px; font-weight: normal;")
         self.source_combo = QComboBox()
-        self.source_combo.addItems(["Tự động", "English", "日本語", "中文"])
+        self.source_combo.addItems(LanguageConfig.get_source_languages())
+        self.source_combo.setCurrentText("Auto (Detect)")
         self.source_combo.setStyleSheet(theme.get_combo_box_style())
         self.source_combo.currentTextChanged.connect(self._on_source_language_changed)
         source_layout.addWidget(source_label)
@@ -342,7 +344,8 @@ class MainTab(QWidget):
         target_label = QLabel("Ngôn ngữ đích")
         target_label.setStyleSheet(f"font-size: 11px; color: {theme.TEXT_SECONDARY}; margin-bottom: 5px; font-weight: normal;")
         self.target_combo = QComboBox()
-        self.target_combo.addItems(["Tiếng Việt", "English", "日本語", "中文"])
+        self.target_combo.addItems(LanguageConfig.get_target_languages())
+        self.target_combo.setCurrentText("Vietnamese")
         self.target_combo.setStyleSheet(theme.get_combo_box_style())
         self.target_combo.currentTextChanged.connect(self._on_target_language_changed)
         target_layout.addWidget(target_label)
@@ -533,7 +536,6 @@ class MainTab(QWidget):
     # === Language handling ===
     def _on_source_language_changed(self, lang_name: str):
         """Handle source language change"""
-        from config.language_config import LanguageConfig
         lang_code = LanguageConfig.get_language_code(lang_name)
         
         if hasattr(self.app, 'ocr_service') and self.app.ocr_service:
@@ -543,7 +545,6 @@ class MainTab(QWidget):
 
     def _on_target_language_changed(self, lang_name: str):
         """Handle target language change"""
-        from config.language_config import LanguageConfig
         lang_code = LanguageConfig.get_language_code(lang_name)
         trans_code = LanguageConfig.get_translation_code(lang_code)
         
