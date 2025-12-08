@@ -145,6 +145,12 @@ class MainTab(QWidget):
         self.thumbnail_update_timer.timeout.connect(self._update_thumbnails)
         self.thumbnail_update_timer.setInterval(50)
 
+        # Live preview timer - updates preview in real-time
+        self.live_preview_timer = QTimer()
+        self.live_preview_timer.timeout.connect(self._update_live_preview)
+        self.live_preview_timer.setInterval(500)  # Update every 500ms
+        self.is_live_preview_enabled = False
+
         # Start system monitor and connect signal
         self.system_monitor = get_system_monitor()
         self.system_monitor.start()
@@ -396,34 +402,33 @@ class MainTab(QWidget):
         """)
         self.refresh_btn.clicked.connect(self.refresh_window_list)
 
-        # Continue button
-        self.continue_btn = QPushButton("▶ Bắt đầu")
-        self.continue_btn.setStyleSheet(f"""
+        # Live preview toggle button
+        self.live_preview_btn = QPushButton("📺 Live")
+        self.live_preview_btn.setFixedHeight(35)
+        self.live_preview_btn.setCheckable(True)
+        self.live_preview_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {theme.ACCENT_PRIMARY};
+                background-color: {theme.BG_TERTIARY};
                 color: white;
-                font-size: 13px;
-                font-weight: bold;
-                padding: 8px 16px;
+                font-size: 12px;
+                padding: 0 12px;
                 border-radius: 5px;
             }}
             QPushButton:hover {{
-                background-color: {theme.ACCENT_SECONDARY};
+                background-color: {theme.ACCENT_PRIMARY};
             }}
-            QPushButton:disabled {{
-                background-color: {theme.BG_TERTIARY};
-                color: {theme.TEXT_MUTED};
+            QPushButton:checked {{
+                background-color: {theme.SUCCESS};
             }}
         """)
-        self.continue_btn.clicked.connect(self.confirm_window_selection)
-        self.continue_btn.setEnabled(False)
+        self.live_preview_btn.clicked.connect(self._toggle_live_preview)
 
         header_layout.addWidget(preview_label)
         header_layout.addStretch()
         header_layout.addWidget(target_label)
         header_layout.addWidget(self.window_combo)
         header_layout.addWidget(self.refresh_btn)
-        header_layout.addWidget(self.continue_btn)
+        header_layout.addWidget(self.live_preview_btn)
 
         layout.addLayout(header_layout)
 
@@ -442,7 +447,7 @@ class MainTab(QWidget):
         preview_section_layout.setContentsMargins(0, 0, 0, 0)
 
         # Instruction label
-        self.instruction_label = QLabel("📍 Chọn cửa sổ, sau đó click 'Bắt đầu' để xem preview và chọn vùng")
+        self.instruction_label = QLabel("📍 Chọn cửa sổ, bật Live preview rồi kéo thả để chọn vùng")
         self.instruction_label.setStyleSheet(f"""
             color: {theme.INFO};
             font-size: 12px;
@@ -488,24 +493,18 @@ class MainTab(QWidget):
         self.preview_scale = 1.0
         self.original_window_image = None
 
-        # Add region button
-        self.add_region_btn = QPushButton("➕ Chọn vùng mới")
-        self.add_region_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {theme.SUCCESS};
-                color: white;
-                font-size: 13px;
-                font-weight: bold;
-                padding: 10px 16px;
-                border-radius: 5px;
-            }}
-            QPushButton:hover {{
-                background-color: #059669;
-            }}
+        # Selection hint label (replaces add_region_btn)
+        self.selection_hint = QLabel("💡 Kéo thả trên màn hình preview để chọn vùng theo dõi")
+        self.selection_hint.setStyleSheet(f"""
+            color: {theme.TEXT_SECONDARY};
+            font-size: 12px;
+            padding: 8px 12px;
+            background-color: {theme.BG_SECONDARY};
+            border-radius: 5px;
+            margin-top: 5px;
         """)
-        self.add_region_btn.clicked.connect(self.add_new_region)
-        self.add_region_btn.setVisible(False)
-        layout.addWidget(self.add_region_btn)
+        self.selection_hint.setWordWrap(True)
+        layout.addWidget(self.selection_hint)
 
         # Regions display area
         regions_title = QLabel("Các vùng đang giám sát:")
@@ -641,55 +640,23 @@ class MainTab(QWidget):
             print(f"[MainTab] Error refreshing: {e}")
 
     def on_window_combo_changed(self, index: int):
-        """Enable continue button when window is selected"""
+        """Handle window selection change"""
         try:
             if index < 0:
-                self.continue_btn.setEnabled(False)
                 return
 
             data = self.window_combo.itemData(index)
             if not data:
-                self.continue_btn.setEnabled(False)
                 return
 
-            self.continue_btn.setEnabled(True)
             hwnd, window_title = data
             self.status_label.setText(f"Đã chọn: {window_title[:40]}...")
 
         except Exception as e:
             print(f"[MainTab] Error: {e}")
 
-    def confirm_window_selection(self):
-        """User clicked Continue - capture and show preview"""
-        try:
-            index = self.window_combo.currentIndex()
-            if index < 0:
-                return
-
-            data = self.window_combo.itemData(index)
-            if not data:
-                return
-
-            hwnd, window_title = data
-            self.selected_hwnd = hwnd
-            self.selected_window_title = window_title
-
-            self.selection_start = None
-            self.selection_current = None
-
-            print(f"[MainTab] Confirmed window: {window_title}")
-
-            self.instruction_label.setText("📍 Click và kéo trên preview để chọn vùng")
-            self.instruction_label.setStyleSheet(f"""
-                color: {theme.SUCCESS};
-                font-size: 12px;
-                padding: 10px;
-                background-color: #064e3b;
-                border-radius: 5px;
-            """)
-
-            self.update_window_preview()
-            self.continue_btn.setEnabled(False)
+        except Exception as e:
+            print(f"[MainTab] Error: {e}")
 
         except Exception as e:
             print(f"[MainTab] Error: {e}")
@@ -730,8 +697,6 @@ class MainTab(QWidget):
 
             if not pil_image:
                 self.window_preview.setText("❌ Không thể capture window")
-                self.continue_btn.setEnabled(True)
-                self.continue_btn.setText("🔄 Thử lại")
                 return
 
             self.original_window_image = pil_image.copy()
@@ -769,13 +734,102 @@ class MainTab(QWidget):
             self.window_preview.setMinimumSize(display_width, display_height)
             self.window_preview.setMaximumSize(display_width, display_height)
 
-            self.continue_btn.setText("▶ Bắt đầu")
             print(f"[MainTab] Preview updated: {display_width}x{display_height}")
 
         except Exception as e:
             print(f"[MainTab] Error updating preview: {e}")
             import traceback
             traceback.print_exc()
+
+    def _toggle_live_preview(self, checked: bool):
+        """Toggle live preview mode"""
+        self.is_live_preview_enabled = checked
+        
+        if checked:
+            # Start live preview - need to have a selected window first
+            index = self.window_combo.currentIndex()
+            if index >= 0:
+                data = self.window_combo.itemData(index)
+                if data:
+                    hwnd, window_title = data
+                    self.selected_hwnd = hwnd
+                    self.selected_window_title = window_title
+                    self.live_preview_timer.start()
+                    self.live_preview_btn.setText("📺 Live ON")
+                    print(f"[MainTab] Live preview started for: {window_title}")
+                    # Do initial capture
+                    self._update_live_preview()
+                else:
+                    self.live_preview_btn.setChecked(False)
+                    self.is_live_preview_enabled = False
+            else:
+                self.live_preview_btn.setChecked(False)
+                self.is_live_preview_enabled = False
+        else:
+            self.live_preview_timer.stop()
+            self.live_preview_btn.setText("📺 Live")
+            print("[MainTab] Live preview stopped")
+
+    def _update_live_preview(self):
+        """Update preview in real-time without hiding main window"""
+        try:
+            if not self.selected_hwnd or not self.is_live_preview_enabled:
+                return
+
+            import win32gui
+
+            # Check if window still exists
+            if not win32gui.IsWindow(self.selected_hwnd):
+                self.live_preview_timer.stop()
+                self.live_preview_btn.setChecked(False)
+                self.is_live_preview_enabled = False
+                self.window_preview.setText("❌ Cửa sổ đã bị đóng")
+                return
+
+            # Capture window directly without hiding main window
+            window_capture = WindowCapture(hwnd=self.selected_hwnd)
+            pil_image = window_capture.capture_window()
+
+            if not pil_image:
+                return  # Skip this frame if capture failed
+
+            self.original_window_image = pil_image.copy()
+
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
+
+            max_width = 700
+            max_height = 380
+            img_width, img_height = pil_image.size
+
+            self.preview_scale = min(max_width / img_width, max_height / img_height, 1.0)
+            display_width = int(img_width * self.preview_scale)
+            display_height = int(img_height * self.preview_scale)
+
+            pil_image = pil_image.resize((display_width, display_height), Image.Resampling.LANCZOS)
+
+            img_data = pil_image.tobytes('raw', 'RGB')
+            bytes_per_line = pil_image.width * 3
+            qimage = QImage(img_data, pil_image.width, pil_image.height, bytes_per_line, QImage.Format.Format_RGB888)
+            qimage = qimage.copy()
+
+            self.preview_pixmap = QPixmap.fromImage(qimage)
+
+            self.window_preview.setText("")
+            self.window_preview.setStyleSheet(f"""
+                QLabel {{
+                    border: 2px solid {theme.SUCCESS};
+                    border-radius: 5px;
+                    background-color: {theme.BG_SECONDARY};
+                }}
+            """)
+
+            self.window_preview.setPixmap(self.preview_pixmap)
+            self.window_preview.setMinimumSize(display_width, display_height)
+            self.window_preview.setMaximumSize(display_width, display_height)
+
+        except Exception as e:
+            print(f"[MainTab] Error in live preview: {e}")
 
     # === Mouse events for region selection ===
     def on_preview_mouse_press(self, event):
@@ -821,19 +875,9 @@ class MainTab(QWidget):
         self.selection_start = None
         self.selection_current = None
 
+        # Auto-start monitoring after first region (no popup needed - preview stays visible for more regions)
         if not self.is_monitoring:
-            reply = QMessageBox.question(
-                self,
-                "Chọn vùng",
-                f"Đã chọn {len(self.regions)} vùng.\n\nBạn có muốn chọn thêm vùng khác không?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
-            )
-
-            if reply == QMessageBox.StandardButton.Yes:
-                self.instruction_label.setText(f"📍 Click và kéo để chọn vùng {len(self.regions) + 1}")
-            else:
-                self.start_monitoring()
+            self.start_monitoring()
 
     def draw_selection_rectangle(self):
         """Draw selection rectangle on preview"""
@@ -890,13 +934,6 @@ class MainTab(QWidget):
         except Exception as e:
             print(f"[MainTab] Error adding region: {e}")
             QMessageBox.critical(self, "Lỗi", f"Không thể thêm vùng: {e}")
-
-    def add_new_region(self):
-        """Add new region while monitoring"""
-        print("[MainTab] Add new region clicked")
-        self.preview_section.setVisible(True)
-        self.instruction_label.setText("📍 Click và kéo để chọn vùng mới")
-        self.update_window_preview()
 
     def stop_region(self, region_id: int):
         """Stop monitoring a specific region"""
@@ -956,23 +993,16 @@ class MainTab(QWidget):
                 time.sleep(0.3)
 
             self.is_monitoring = True
-            self.add_region_btn.setVisible(True)
             self.status_label.setText(f"Đang giám sát {len(self.regions)} vùng")
-            self.instruction_label.setText(f"✓ Đang giám sát {len(self.regions)} vùng")
-            self.instruction_label.setStyleSheet(f"""
-                color: {theme.SUCCESS};
-                font-size: 12px;
-                padding: 10px;
-                background-color: #064e3b;
-                border-radius: 5px;
-            """)
+            # Hide instruction label to avoid duplicate with status_label
+            self.instruction_label.setVisible(False)
 
             self.thumbnail_update_timer.start()
             self._start_monitoring_loop()
 
             time.sleep(0.5)
-            self.preview_section.setVisible(False)
-            self.window().hide()
+            # Removed: self.preview_section.setVisible(False) - Keep preview visible for selecting more regions
+            # Removed: self.window().hide() - UI should only hide/show via toggle button
 
             print(f"[MainTab] ✓ Monitoring started")
 
@@ -1055,9 +1085,10 @@ class MainTab(QWidget):
             self.window().raise_()
             self.window().activateWindow()
 
-            self.add_region_btn.setVisible(False)
             self.status_label.setText("Đã dừng giám sát")
-            self.instruction_label.setText("📍 Chọn cửa sổ và click 'Bắt đầu' để giám sát")
+            # Show instruction label again
+            self.instruction_label.setVisible(True)
+            self.instruction_label.setText("📍 Bật Live preview và kéo thả để chọn vùng theo dõi")
             self.instruction_label.setStyleSheet(f"""
                 color: {theme.INFO};
                 font-size: 12px;
