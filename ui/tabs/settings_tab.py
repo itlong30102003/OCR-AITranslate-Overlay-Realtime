@@ -70,53 +70,10 @@ class SettingsTab(QWidget):
         """)
         ocr_layout = QVBoxLayout()
         
-        # Tokenization checkbox
-        self.tokenization_check = QCheckBox("Bật tách từ đa ngôn ngữ (Tokenization)")
-        self.tokenization_check.setChecked(True)
-        self.tokenization_check.setStyleSheet("""
-            QCheckBox {
-                color: #e5e7eb;
-                font-size: 14px;
-                font-weight: normal;
-                spacing: 10px;
-            }
-            QCheckBox::indicator {
-                width: 20px;
-                height: 20px;
-                border: 2px solid #374151;
-                border-radius: 4px;
-                background-color: #1f2937;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #3b82f6;
-                border-color: #3b82f6;
-            }
-        """)
-        ocr_layout.addWidget(self.tokenization_check)
-        
-        # Japanese processing checkbox
-        self.japanese_check = QCheckBox("Bật xử lý đặc biệt cho tiếng Nhật")
-        self.japanese_check.setChecked(True)
-        self.japanese_check.setStyleSheet("""
-            QCheckBox {
-                color: #e5e7eb;
-                font-size: 14px;
-                font-weight: normal;
-                spacing: 10px;
-            }
-            QCheckBox::indicator {
-                width: 20px;
-                height: 20px;
-                border: 2px solid #374151;
-                border-radius: 4px;
-                background-color: #1f2937;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #3b82f6;
-                border-color: #3b82f6;
-            }
-        """)
-        ocr_layout.addWidget(self.japanese_check)
+        # Placeholder label for future OCR settings
+        ocr_info = QLabel("Các tùy chọn OCR sẽ được cập nhật sau")
+        ocr_info.setStyleSheet("color: #9ca3af; font-size: 13px; font-style: italic;")
+        ocr_layout.addWidget(ocr_info)
         
         ocr_group.setLayout(ocr_layout)
         layout.addWidget(ocr_group)
