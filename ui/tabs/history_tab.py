@@ -538,7 +538,7 @@ class HistoryTab(QWidget):
                 QMessageBox.critical(self, "Error", f"Lỗi xuất CSV: {e}")
     
     def export_to_pdf(self):
-        """Export history to PDF with Unicode font support"""
+        """Export history to PDF - auto-detect language and use appropriate font"""
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Export to PDF",
@@ -559,86 +559,126 @@ class HistoryTab(QWidget):
             from reportlab.pdfbase.ttfonts import TTFont
             import os
             
-            # Register Arial font from Windows system
-            font_path = "C:\\Windows\\Fonts\\arial.ttf"
-            font_name = 'Arial'
+            # === SIMPLE FONT SELECTION BASED ON SOURCE LANGUAGE ===
+            # Detect dominant language from history
+            detected_lang = self._detect_dominant_language()
             
-            if os.path.exists(font_path):
-                try:
-                    pdfmetrics.registerFont(TTFont('Arial', font_path))
-                    print("[Export] Loaded Arial font")
-                except Exception as e:
-                    print(f"[Export] Failed to load Arial: {e}")
+            # Font mapping: language -> (font_path, font_name)
+            font_map = {
+                'jpn': ("C:\\Windows\\Fonts\\msgothic.ttc", "MSGothic"),      # Japanese
+                'ja': ("C:\\Windows\\Fonts\\msgothic.ttc", "MSGothic"),
+                'chi': ("C:\\Windows\\Fonts\\simsun.ttc", "SimSun"),          # Chinese
+                'zh': ("C:\\Windows\\Fonts\\simsun.ttc", "SimSun"),
+                'default': ("C:\\Windows\\Fonts\\arial.ttf", "Arial"),        # Others (Vie, Eng, etc.)
+            }
+            
+            # Get font for detected language
+            font_path, font_name = font_map.get(detected_lang, font_map['default'])
+            
+            # Register font
+            try:
+                if os.path.exists(font_path):
+                    if font_path.endswith('.ttc'):
+                        pdfmetrics.registerFont(TTFont(font_name, font_path, subfontIndex=0))
+                    else:
+                        pdfmetrics.registerFont(TTFont(font_name, font_path))
+                    print(f"[Export] Using font: {font_name} for language: {detected_lang}")
+                else:
                     font_name = 'Helvetica'
-            else:
-                print("[Export] Arial font not found, using Helvetica")
-                font_name = 'Helvetica' # Fallback (no Vietnamese support)
+                    print(f"[Export] Font not found, using Helvetica")
+            except Exception as e:
+                font_name = 'Helvetica'
+                print(f"[Export] Font error: {e}, using Helvetica")
             
-            doc = SimpleDocTemplate(filename, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
+            # Create document
+            doc = SimpleDocTemplate(
+                filename, 
+                pagesize=landscape(A4), 
+                rightMargin=20, leftMargin=20, 
+                topMargin=20, bottomMargin=20
+            )
             elements = []
             
             # Styles
             styles = getSampleStyleSheet()
             
-            # Title
             title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontName=font_name, fontSize=16, alignment=1)
-            elements.append(Paragraph("Lịch sử dịch thuật", title_style))
+            elements.append(Paragraph("Translation History", title_style))
             elements.append(Spacer(1, 20))
             
-            # Prepare data
-            # Header
-            header = ['STT', 'Thời gian', 'Văn bản gốc', 'Bản dịch', 'Ngôn ngữ', 'Model']
-            
-            # Create Paragraphs for cells to enable word wrapping
-            style_body = ParagraphStyle('Body', parent=styles['Normal'], fontName=font_name, fontSize=9, leading=11)
+            # Table styles
+            header = ['#', 'Time', 'Source', 'Translation', 'Lang', 'Model']
+            style_body = ParagraphStyle('Body', parent=styles['Normal'], fontName=font_name, fontSize=9, leading=12)
             style_header = ParagraphStyle('Header', parent=styles['Normal'], fontName=font_name, fontSize=10, textColor=colors.white, alignment=1)
             
+            # Build table data
             data = [[Paragraph(col, style_header) for col in header]]
             
             for idx, item in enumerate(self.current_history, 1):
                 timestamp = item['timestamp']
-                if hasattr(timestamp, 'strftime'):
-                    time_str = timestamp.strftime('%H:%M:%S\n%d/%m/%Y')
-                else:
-                    time_str = str(timestamp)
+                time_str = timestamp.strftime('%H:%M\n%d/%m') if hasattr(timestamp, 'strftime') else str(timestamp)
+                lang = f"{item.get('sourceLang', '')}→{item.get('targetLang', '')}"
                 
-                lang = f"{item.get('sourceLang', '')}\n→{item.get('targetLang', '')}"
+                source_text = self._escape_xml(item.get('sourceText', ''))
+                translated_text = self._escape_xml(item.get('translatedText', ''))
                 
                 data.append([
                     str(idx),
                     time_str,
-                    Paragraph(item.get('sourceText', ''), style_body),
-                    Paragraph(item.get('translatedText', ''), style_body),
+                    Paragraph(source_text, style_body),
+                    Paragraph(translated_text, style_body),
                     lang,
                     item.get('modelUsed', '')
                 ])
             
-            # Create table with autosizing
-            # Total width = approx 11 inches for A4 landscape
-            col_widths = [0.4*inch, 0.9*inch, 4.0*inch, 4.0*inch, 0.8*inch, 0.8*inch]
-            
+            # Create table
+            col_widths = [0.3*inch, 0.7*inch, 4.2*inch, 4.2*inch, 0.7*inch, 0.8*inch]
             table = Table(data, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f2937')),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#d1d5db')),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f3f4f6')),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f9fafb')]),
-                ('LEFTPADDING', (0, 0), (-1, -1), 4),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
             ]))
             
             elements.append(table)
             doc.build(elements)
             
-            QMessageBox.information(self, "Success", f"Đã xuất PDF thành công: {filename}")
+            QMessageBox.information(self, "Success", f"Đã xuất PDF: {filename}\n(Font: {font_name})")
             
         except ImportError:
-            QMessageBox.warning(self, "Missing Library", "Cần cài reportlab: pip install reportlab")
+            QMessageBox.warning(self, "Missing Library", "Cần cài reportlab:\npip install reportlab")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Lỗi xuất PDF: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _detect_dominant_language(self) -> str:
+        """Detect dominant source language from history records"""
+        if not self.current_history:
+            return 'default'
+        
+        # Count source languages
+        lang_count = {}
+        for item in self.current_history:
+            src_lang = item.get('sourceLang', '').lower()
+            lang_count[src_lang] = lang_count.get(src_lang, 0) + 1
+        
+        # Return most common language
+        if lang_count:
+            return max(lang_count, key=lang_count.get)
+        return 'default'
+    
+    def _escape_xml(self, text: str) -> str:
+        """Escape special XML characters for reportlab Paragraph"""
+        if not text:
+            return ""
+        text = text.replace('&', '&amp;')
+        text = text.replace('<', '&lt;')
+        text = text.replace('>', '&gt;')
+        return text
