@@ -91,6 +91,9 @@ class MainTab(QWidget):
 
         # Monitoring state
         self.is_monitoring = False
+        
+        # Translation mode: "realtime" or "region" (snapshot)
+        self.current_translation_mode = "realtime"
         self.monitoring_thread = None
 
         # Performance metrics (will be updated from SystemMonitor)
@@ -242,9 +245,9 @@ class MainTab(QWidget):
         layout.setSpacing(10)
 
         modes = [
-            ("Dịch tức thời", True, True),
-            ("Dịch theo vùng", False, False),  # Disabled
-            ("Dịch từng từ", True, True)
+            ("Dịch tức thời", True, True),       # Realtime - default ON
+            ("Dịch theo vùng", False, True),     # Region (snapshot) - enabled
+            ("Dịch từng từ", False, False)       # Word-by-word - disabled for later
         ]
 
         self.mode_toggles = {}
@@ -276,6 +279,10 @@ class MainTab(QWidget):
             mode_layout.addWidget(label)
             mode_layout.addStretch()
             mode_layout.addWidget(toggle)
+            
+            # Connect toggle signal for mutual exclusion (only for enabled toggles)
+            if enabled:
+                toggle.toggled.connect(lambda checked, name=mode_name: self._on_mode_toggle_changed(name, checked))
 
             layout.addWidget(mode_widget)
 
@@ -505,6 +512,46 @@ class MainTab(QWidget):
             self.app.translation_service.target_lang = trans_code
         
         print(f"[MainTab] Target language: {lang_name} ({lang_code})")
+
+    def _on_mode_toggle_changed(self, mode_name: str, checked: bool):
+        """Handle translation mode toggle - implement mutual exclusion"""
+        if not checked:
+            # If turning OFF, check if at least one mode is still ON
+            any_on = any(
+                toggle.isChecked() 
+                for name, toggle in self.mode_toggles.items() 
+                if toggle.isEnabled()
+            )
+            if not any_on:
+                # Prevent turning off the last active mode - turn it back on
+                self.mode_toggles[mode_name].blockSignals(True)
+                self.mode_toggles[mode_name].setChecked(True)
+                self.mode_toggles[mode_name].blockSignals(False)
+            return
+        
+        # Turning ON a mode - turn OFF all other enabled modes
+        for name, toggle in self.mode_toggles.items():
+            if name != mode_name and toggle.isEnabled() and toggle.isChecked():
+                toggle.blockSignals(True)
+                toggle.setChecked(False)
+                toggle.blockSignals(False)
+        
+        # Update current mode
+        if mode_name == "Dịch tức thời":
+            self.current_translation_mode = "realtime"
+            print("[MainTab] Mode changed: Realtime (continuous monitoring, no history)")
+        elif mode_name == "Dịch theo vùng":
+            self.current_translation_mode = "region"
+            print("[MainTab] Mode changed: Region (single scan, saves to history)")
+        
+        # Sync translation mode to async service (controls history saving)
+        if hasattr(self.app, 'async_service') and self.app.async_service:
+            self.app.async_service.set_translation_mode(self.current_translation_mode)
+        
+        # If currently monitoring, restart with new mode
+        if self.is_monitoring:
+            print(f"[MainTab] Restarting monitoring with new mode: {self.current_translation_mode}")
+            self._restart_monitoring_with_new_mode()
 
     def _update_scan_label(self, counter: int):
         """Update scan label"""
@@ -969,6 +1016,9 @@ class MainTab(QWidget):
             if not self.app.async_service.is_running():
                 self.app.async_service.start()
                 time.sleep(0.3)
+            
+            # Sync translation mode to async service (controls history saving)
+            self.app.async_service.set_translation_mode(self.current_translation_mode)
 
             self.is_monitoring = True
             self.status_label.setText(f"Đang giám sát {len(self.regions)} vùng")
@@ -994,8 +1044,11 @@ class MainTab(QWidget):
             fps = 25
             frame_interval = 1.0 / fps
             scan_counter = 0
+            
+            # Get current mode at start
+            current_mode = self.current_translation_mode
 
-            print(f"[MonitoringThread] Started at {fps} FPS")
+            print(f"[MonitoringThread] Started at {fps} FPS, mode: {current_mode}")
 
             while self.is_monitoring:
                 start_time = time.time()
@@ -1034,6 +1087,18 @@ class MainTab(QWidget):
 
                             self.scan_counter = scan_counter
                             self.scan_counter_updated.emit(scan_counter)
+                            
+                            # REGION MODE (snapshot): Stop after first successful scan
+                            if current_mode == "region":
+                                print(f"[MonitoringThread] Region mode: Single scan completed, keeping overlay visible")
+                                # Don't stop monitoring immediately - let overlay stay visible
+                                # Just stop the loop, but keep is_monitoring=True for overlay
+                                self.is_monitoring = False
+                                break
+
+                    # Break outer loop if region mode completed
+                    if current_mode == "region" and not self.is_monitoring:
+                        break
 
                     elapsed = time.time() - start_time
                     to_sleep = frame_interval - elapsed
@@ -1048,6 +1113,20 @@ class MainTab(QWidget):
 
         self.monitoring_thread = threading.Thread(target=monitoring_thread, daemon=True)
         self.monitoring_thread.start()
+    
+    def _restart_monitoring_with_new_mode(self):
+        """Restart monitoring with new translation mode"""
+        # Stop current monitoring
+        self.is_monitoring = False
+        time.sleep(0.2)  # Wait for thread to stop
+        
+        # Clear overlay but keep regions
+        self.app.overlay_service.clear_positioned_overlay()
+        
+        # Restart monitoring with new mode
+        self.is_monitoring = True
+        self._start_monitoring_loop()
+        print(f"[MainTab] Monitoring restarted with mode: {self.current_translation_mode}")
 
     def stop_monitoring(self):
         """Stop monitoring"""

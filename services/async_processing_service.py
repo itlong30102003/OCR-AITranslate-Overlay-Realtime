@@ -25,6 +25,9 @@ class AsyncProcessingService:
         self.overlay_service = overlay_service
         self.overlay_mode = overlay_mode  # "list" or "positioned"
         self.user_id = user_id
+        
+        # Translation mode: "realtime" (no history) or "region" (save to history)
+        self.translation_mode = "realtime"
 
         # Local history service (lazy load)
         self._history_service = None
@@ -126,30 +129,88 @@ class AsyncProcessingService:
         """Set user ID for history tracking"""
         self.user_id = user_id
         print(f"[Async Processing Service] User ID set: {user_id}")
+    
+    def set_translation_mode(self, mode: str):
+        """
+        Set translation mode
+        
+        Args:
+            mode: "realtime" (no history saving) or "region" (save to history)
+        """
+        if mode in ["realtime", "region"]:
+            self.translation_mode = mode
+            print(f"[Async Processing Service] Translation mode set to: {mode}")
+        else:
+            print(f"[Async Processing Service] Invalid translation mode: {mode}")
 
     def _get_history_service(self):
-        """Lazy load local history service"""
+        """Lazy load local history service (SQLite - offline backup)"""
         if self._history_service is None and self.user_id:
             try:
                 from firebase.local_history_service import LocalHistoryService
                 # Initialize with correct user_id and batch_size
                 self._history_service = LocalHistoryService(batch_size=20, current_user_id=self.user_id)
-                print("[Async Processing Service] Local history service loaded")
+                print("[Async Processing Service] Local history service loaded (offline backup)")
             except Exception as e:
                 print(f"[Async Processing Service] Failed to load local history: {e}")
         return self._history_service
+    
+    def _get_firebase_history_service(self):
+        """Lazy load Firebase history service"""
+        if not hasattr(self, '_firebase_history_service'):
+            self._firebase_history_service = None
+        if self._firebase_history_service is None and self.user_id:
+            try:
+                from firebase.history_service import FirebaseHistoryService
+                self._firebase_history_service = FirebaseHistoryService(self.user_id)
+                print("[Async Processing Service] Firebase history service loaded")
+            except Exception as e:
+                print(f"[Async Processing Service] Failed to load Firebase history: {e}")
+        return self._firebase_history_service
+    
+    def _check_internet(self) -> bool:
+        """Quick check if internet is available"""
+        import socket
+        try:
+            # Try to connect to Google DNS (fast check)
+            socket.create_connection(("8.8.8.8", 53), timeout=1)
+            return True
+        except (socket.timeout, socket.error):
+            return False
 
     async def _save_to_history(self, source_text: str, translated_text: str, source_lang: str, target_lang: str, model: str, confidence: float):
-        """Save translation to Firebase history"""
+        """
+        Save translation to history - Online First strategy:
+        - Online: Save directly to Firebase Firestore
+        - Offline: Save to SQLite (will sync when back online)
+        """
         if not self.user_id:
             return
-
-        history_service = self._get_history_service()
-        if history_service:
-            try:
-                # Call synchronously - SQLite writes are fast and don't need async
-                # This avoids event loop shutdown issues with asyncio.to_thread
-                history_service.save_translation(
+        
+        try:
+            # Check if online
+            is_online = self._check_internet()
+            
+            if is_online:
+                # Online: Save directly to Firebase
+                firebase_service = self._get_firebase_history_service()
+                if firebase_service:
+                    firebase_service.save_translation(
+                        user_id=self.user_id,
+                        source_text=source_text,
+                        translated_text=translated_text,
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        model_used=model,
+                        confidence=confidence
+                    )
+                    print(f"[History] Saved to Firebase: {source_text[:30]}...")
+                    return
+            
+            # Offline or Firebase failed: Save to SQLite
+            local_service = self._get_history_service()
+            if local_service:
+                local_service.save_translation(
                     user_id=self.user_id,
                     source_text=source_text,
                     translated_text=translated_text,
@@ -158,11 +219,12 @@ class AsyncProcessingService:
                     model_used=model,
                     confidence=confidence
                 )
-                print(f"[Async Processing Service] Saved to history: {source_text[:30]}... -> {translated_text[:30]}...")
-            except Exception as e:
-                print(f"[Async Processing Service] Failed to save history: {e}")
-                import traceback
-                traceback.print_exc()
+                print(f"[History] Saved to SQLite (offline): {source_text[:30]}...")
+                
+        except Exception as e:
+            print(f"[Async Processing Service] Failed to save history: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _process_region(self, region_idx: int, img: Image.Image, scan_counter: int, region_coords: tuple = None):
         """
@@ -261,16 +323,17 @@ class AsyncProcessingService:
                     # Step 3: Update positioned overlay (thread-safe)
                     self.overlay_service.update_positioned_overlay(region_idx, translated_boxes)
 
-                    # Step 4: Save each translation to local history
-                    for box in translated_boxes:
-                        await self._save_to_history(
-                            source_text=box.original_text,
-                            translated_text=box.translated_text,
-                            source_lang=self.translation_service.source_lang,
-                            target_lang=self.translation_service.target_lang,
-                            model=box.model,
-                            confidence=box.confidence
-                        )
+                    # Step 4: Save to history ONLY in "region" mode (not realtime)
+                    if self.translation_mode == "region":
+                        for box in translated_boxes:
+                            await self._save_to_history(
+                                source_text=box.original_text,
+                                translated_text=box.translated_text,
+                                source_lang=self.translation_service.source_lang,
+                                target_lang=self.translation_service.target_lang,
+                                model=box.model,
+                                confidence=box.confidence
+                            )
 
         except Exception as e:
             print(f"[Async Processing Service] Error processing region {region_idx} (positioned mode): {e}")

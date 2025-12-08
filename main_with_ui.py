@@ -91,10 +91,9 @@ def main():
         # User already logged in, show main window
         print(f"[INFO] User already logged in: {current_user.get('email')}")
 
-        # Create app service WITHOUT history saving (temporarily disabled)
-        # To enable history: change user_id=None to user_id=current_user['localId']
+        # Create app service with history saving enabled
         from services.app_service import AppService
-        app_service = AppService(user_id=None)
+        app_service = AppService(user_id=current_user['localId'])
 
         # Show main window
         main_window = MainWindow(user=current_user, app_instance=app_service)
@@ -108,10 +107,9 @@ def main():
             print(f"[INFO] Login successful: {user.get('email')}")
             login_window.hide()
 
-            # Create app service WITHOUT history saving (temporarily disabled)
-            # To enable history: change user_id=None to user_id=user['localId']
+            # Create app service with history saving enabled
             from services.app_service import AppService
-            app_service = AppService(user_id=None)
+            app_service = AppService(user_id=user['localId'])
 
             # Show main window
             main_window = MainWindow(user=user, app_instance=app_service)

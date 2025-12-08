@@ -3,10 +3,11 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QTableWidget, QTableWidgetItem,
                              QPushButton, QHeaderView, QMessageBox, QFileDialog,
-                             QComboBox)
-from PyQt6.QtCore import Qt
+                             QComboBox, QDialog, QTextEdit)
+from PyQt6.QtCore import Qt, QTimer
 from firebase.local_history_service import LocalHistoryService
-from PyQt6.QtCore import QTimer
+from firebase.history_service import FirebaseHistoryService
+import socket
 import csv
 
 
@@ -16,12 +17,22 @@ class HistoryTab(QWidget):
     def __init__(self, user_id):
         super().__init__()
         self.user_id = user_id
-        self.history_service = LocalHistoryService()
+        # Both services - use Firebase when online, SQLite as fallback
+        self.local_history_service = LocalHistoryService()
+        self.firebase_history_service = FirebaseHistoryService(user_id)
         self.current_history = []
         self.init_ui()
         self.load_history()
 
         # No auto-refresh timer - only refresh when needed
+    
+    def _check_internet(self) -> bool:
+        """Quick check if internet is available"""
+        try:
+            socket.create_connection(("8.8.8.8", 53), timeout=1)
+            return True
+        except (socket.timeout, socket.error):
+            return False
 
     def init_ui(self):
         """Initialize UI"""
@@ -155,13 +166,17 @@ class HistoryTab(QWidget):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
+        # Set row height
+        self.table.verticalHeader().setDefaultSectionSize(45)
+        # Double-click to view full content
+        self.table.doubleClicked.connect(self.show_full_content)
 
         layout.addWidget(self.table)
 
         # Action buttons
         btn_layout = QHBoxLayout()
 
-        export_btn = QPushButton("📥 Export CSV")
+        export_btn = QPushButton("📥 Export")
         export_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2563eb;
@@ -174,10 +189,10 @@ class HistoryTab(QWidget):
                 background-color: #1d4ed8;
             }
         """)
-        export_btn.clicked.connect(self.export_csv)
+        export_btn.clicked.connect(self.export_history)
         btn_layout.addWidget(export_btn)
 
-        clear_btn = QPushButton("🗑️ Clear History")
+        clear_btn = QPushButton("Clear History")
         clear_btn.setStyleSheet("""
             QPushButton {
                 background-color: #dc2626;
@@ -198,9 +213,18 @@ class HistoryTab(QWidget):
         layout.addLayout(btn_layout)
 
     def load_history(self):
-        """Load translation history from Firebase"""
+        """Load translation history - Firebase when online, SQLite as fallback"""
         try:
-            self.current_history = self.history_service.get_user_history(self.user_id, limit=100)
+            is_online = self._check_internet()
+            
+            if is_online:
+                # Online: Read from Firebase
+                self.current_history = self.firebase_history_service.get_user_history(self.user_id, limit=100)
+                print(f"[HistoryTab] Loaded {len(self.current_history)} records from Firebase")
+            else:
+                # Offline: Read from SQLite
+                self.current_history = self.local_history_service.get_user_history(self.user_id, limit=100)
+                print(f"[HistoryTab] Loaded {len(self.current_history)} records from SQLite (offline)")
 
             self.table.setRowCount(len(self.current_history))
 
@@ -242,8 +266,8 @@ class HistoryTab(QWidget):
                 action_layout.setSpacing(5)
 
                 # Delete button
-                del_btn = QPushButton("🗑️")
-                del_btn.setFixedSize(30, 30)
+                del_btn = QPushButton("Delete 🗑️")
+                del_btn.setFixedSize(80, 32)
                 del_btn.setStyleSheet("""
                     QPushButton {
                         background-color: #dc2626;
@@ -265,6 +289,90 @@ class HistoryTab(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load history: {e}")
+
+    def show_full_content(self, index):
+        """Show full content of a translation in a dialog"""
+        row = index.row()
+        if row < 0 or row >= len(self.current_history):
+            return
+        
+        item = self.current_history[row]
+        source_text = item.get('sourceText', '')
+        translated_text = item.get('translatedText', '')
+        lang_pair = f"{item.get('sourceLang', '')} → {item.get('targetLang', '')}"
+        model = item.get('modelUsed', '')
+        
+        # Create dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Chi tiết bản dịch")
+        dialog.setMinimumSize(600, 400)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #1f2937;
+            }
+            QLabel {
+                color: #e5e7eb;
+                font-size: 13px;
+            }
+            QTextEdit {
+                background-color: #111827;
+                color: #e5e7eb;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 13px;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Source text section
+        source_label = QLabel(f"📝 Văn bản gốc ({lang_pair.split('→')[0].strip()}):")
+        source_label.setStyleSheet("font-weight: bold; color: #60a5fa;")
+        layout.addWidget(source_label)
+        
+        source_edit = QTextEdit()
+        source_edit.setPlainText(source_text)
+        source_edit.setReadOnly(True)
+        source_edit.setMinimumHeight(100)
+        layout.addWidget(source_edit)
+        
+        # Translation section
+        trans_label = QLabel(f"🌐 Bản dịch ({lang_pair.split('→')[1].strip()}):")
+        trans_label.setStyleSheet("font-weight: bold; color: #34d399;")
+        layout.addWidget(trans_label)
+        
+        trans_edit = QTextEdit()
+        trans_edit.setPlainText(translated_text)
+        trans_edit.setReadOnly(True)
+        trans_edit.setMinimumHeight(100)
+        layout.addWidget(trans_edit)
+        
+        # Info label
+        info_label = QLabel(f"Model: {model} | {lang_pair}")
+        info_label.setStyleSheet("color: #9ca3af; font-size: 11px;")
+        layout.addWidget(info_label)
+        
+        # Close button
+        close_btn = QPushButton("Đóng")
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #374151;
+                color: white;
+                border: none;
+                padding: 10px 30px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #4b5563;
+            }
+        """)
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        dialog.exec()
 
     def search_history(self, text):
         """Filter table by search text"""
@@ -295,7 +403,10 @@ class HistoryTab(QWidget):
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                self.history_service.delete_record(history_id, self.user_id)
+                if self._check_internet():
+                    self.firebase_history_service.delete_history(self.user_id, history_id)
+                else:
+                    self.local_history_service.delete_record(history_id, self.user_id)
                 self.load_history()
                 QMessageBox.information(self, "Success", "Translation deleted")
             except Exception as e:
@@ -312,7 +423,10 @@ class HistoryTab(QWidget):
 
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                self.history_service.clear_user_history(self.user_id)
+                if self._check_internet():
+                    self.firebase_history_service.clear_user_history(self.user_id)
+                else:
+                    self.local_history_service.clear_user_history(self.user_id)
                 self.load_history()
                 QMessageBox.information(self, "Success", "All history cleared")
             except Exception as e:
@@ -328,37 +442,203 @@ class HistoryTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to sync: {e}")
 
-    def export_csv(self):
-        """Export history to CSV"""
+    def export_history(self):
+        """Show export format selection and export history"""
         if not self.current_history:
             QMessageBox.warning(self, "No Data", "No history to export")
             return
-
+        
+        # Create format selection dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Chọn định dạng xuất")
+        dialog.setFixedSize(300, 150)
+        dialog.setStyleSheet("""
+            QDialog { background-color: #1f2937; }
+            QLabel { color: #e5e7eb; font-size: 14px; }
+            QPushButton {
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-size: 13px;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        label = QLabel("Chọn định dạng xuất file:")
+        layout.addWidget(label)
+        
+        btn_layout = QHBoxLayout()
+        
+        csv_btn = QPushButton("📄 CSV")
+        csv_btn.setStyleSheet("background-color: #059669;")
+        csv_btn.clicked.connect(lambda: self._do_export(dialog, "csv"))
+        btn_layout.addWidget(csv_btn)
+        
+        pdf_btn = QPushButton("📕 PDF")
+        pdf_btn.setStyleSheet("background-color: #dc2626;")
+        pdf_btn.clicked.connect(lambda: self._do_export(dialog, "pdf"))
+        btn_layout.addWidget(pdf_btn)
+        
+        layout.addLayout(btn_layout)
+        dialog.exec()
+    
+    def _do_export(self, dialog, format_type):
+        """Execute export based on format"""
+        dialog.close()
+        if format_type == "csv":
+            self.export_to_csv()
+        else:
+            self.export_to_pdf()
+    
+    def export_to_csv(self):
+        """Export history to CSV with Excel-compatible format"""
         filename, _ = QFileDialog.getSaveFileName(
             self,
-            "Export History",
+            "Export to CSV",
             "translation_history.csv",
             "CSV Files (*.csv)"
         )
 
         if filename:
             try:
-                with open(filename, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Time', 'Source', 'Translation', 'Source Lang', 'Target Lang', 'Model', 'Confidence'])
+                # Use utf-8-sig for Excel to recognize UTF-8
+                with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
+                    # Use semicolon (;) as delimiter which is standard for Excel in many regions (including VN/EU)
+                    # Use quoting=csv.QUOTE_ALL to ensure all fields are properly wrapped
+                    writer = csv.writer(f, delimiter=';', quoting=csv.QUOTE_ALL)
+                    
+                    # Header
+                    writer.writerow(['STT', 'Thời gian', 'Văn bản gốc', 'Bản dịch', 'Ngôn ngữ nguồn', 'Ngôn ngữ đích', 'Model', 'Độ tin cậy'])
 
-                    for item in self.current_history:
+                    for idx, item in enumerate(self.current_history, 1):
+                        timestamp = item['timestamp']
+                        if hasattr(timestamp, 'strftime'):
+                            time_str = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+                        else:
+                            time_str = str(timestamp)
+                        
                         writer.writerow([
-                            item['timestamp'].strftime('%Y-%m-%d %H:%M:%S'),
-                            item.get('sourceText', ''),
-                            item.get('translatedText', ''),
+                            idx,
+                            time_str,
+                            item.get('sourceText', '').replace('\n', ' '),
+                            item.get('translatedText', '').replace('\n', ' '),
                             item.get('sourceLang', ''),
                             item.get('targetLang', ''),
                             item.get('modelUsed', ''),
-                            item.get('confidence', 0)
+                            f"{item.get('confidence', 0):.2f}"
                         ])
 
-                QMessageBox.information(self, "Success", f"Exported {len(self.current_history)} records to {filename}")
+                QMessageBox.information(self, "Success", f"Đã xuất {len(self.current_history)} bản ghi ra {filename}\n(Lưu ý: Dùng dấu chấm phẩy ';' để phân cách cột)")
 
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to export: {e}")
+                QMessageBox.critical(self, "Error", f"Lỗi xuất CSV: {e}")
+    
+    def export_to_pdf(self):
+        """Export history to PDF with Unicode font support"""
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export to PDF",
+            "translation_history.pdf",
+            "PDF Files (*.pdf)"
+        )
+
+        if not filename:
+            return
+            
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            import os
+            
+            # Register Arial font from Windows system
+            font_path = "C:\\Windows\\Fonts\\arial.ttf"
+            font_name = 'Arial'
+            
+            if os.path.exists(font_path):
+                try:
+                    pdfmetrics.registerFont(TTFont('Arial', font_path))
+                    print("[Export] Loaded Arial font")
+                except Exception as e:
+                    print(f"[Export] Failed to load Arial: {e}")
+                    font_name = 'Helvetica'
+            else:
+                print("[Export] Arial font not found, using Helvetica")
+                font_name = 'Helvetica' # Fallback (no Vietnamese support)
+            
+            doc = SimpleDocTemplate(filename, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
+            elements = []
+            
+            # Styles
+            styles = getSampleStyleSheet()
+            
+            # Title
+            title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontName=font_name, fontSize=16, alignment=1)
+            elements.append(Paragraph("Lịch sử dịch thuật", title_style))
+            elements.append(Spacer(1, 20))
+            
+            # Prepare data
+            # Header
+            header = ['STT', 'Thời gian', 'Văn bản gốc', 'Bản dịch', 'Ngôn ngữ', 'Model']
+            
+            # Create Paragraphs for cells to enable word wrapping
+            style_body = ParagraphStyle('Body', parent=styles['Normal'], fontName=font_name, fontSize=9, leading=11)
+            style_header = ParagraphStyle('Header', parent=styles['Normal'], fontName=font_name, fontSize=10, textColor=colors.white, alignment=1)
+            
+            data = [[Paragraph(col, style_header) for col in header]]
+            
+            for idx, item in enumerate(self.current_history, 1):
+                timestamp = item['timestamp']
+                if hasattr(timestamp, 'strftime'):
+                    time_str = timestamp.strftime('%H:%M:%S\n%d/%m/%Y')
+                else:
+                    time_str = str(timestamp)
+                
+                lang = f"{item.get('sourceLang', '')}\n→{item.get('targetLang', '')}"
+                
+                data.append([
+                    str(idx),
+                    time_str,
+                    Paragraph(item.get('sourceText', ''), style_body),
+                    Paragraph(item.get('translatedText', ''), style_body),
+                    lang,
+                    item.get('modelUsed', '')
+                ])
+            
+            # Create table with autosizing
+            # Total width = approx 11 inches for A4 landscape
+            col_widths = [0.4*inch, 0.9*inch, 4.0*inch, 4.0*inch, 0.8*inch, 0.8*inch]
+            
+            table = Table(data, colWidths=col_widths, repeatRows=1)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f2937')),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#d1d5db')),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f3f4f6')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f9fafb')]),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            
+            elements.append(table)
+            doc.build(elements)
+            
+            QMessageBox.information(self, "Success", f"Đã xuất PDF thành công: {filename}")
+            
+        except ImportError:
+            QMessageBox.warning(self, "Missing Library", "Cần cài reportlab: pip install reportlab")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Lỗi xuất PDF: {e}")
+            import traceback
+            traceback.print_exc()
