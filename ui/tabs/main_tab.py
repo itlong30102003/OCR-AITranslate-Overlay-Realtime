@@ -586,6 +586,8 @@ class MainTab(QWidget):
                 speed_progress = max(0, min(100, 100 - self.translation_speed_ms))
                 self.metric_bars["Hiệu suất dịch"].setValue(speed_progress)
 
+
+
         except Exception as e:
             print(f"[MainTab] Error updating metrics: {e}")
 

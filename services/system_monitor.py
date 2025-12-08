@@ -1,6 +1,7 @@
 """System Monitor - Real-time system metrics monitoring"""
 
 import psutil
+import socket
 import threading
 import time
 from typing import Optional
@@ -14,6 +15,9 @@ class SystemMetrics:
         self.memory_percent: float = 0.0
         self.gpu_percent: float = 0.0
         self.translation_speed_ms: int = 0
+        self.network_speed_down: float = 0.0  # KB/s
+        self.network_speed_up: float = 0.0  # KB/s
+        self.is_online: bool = True
 
 
 class SystemMonitor(QObject):
@@ -32,6 +36,10 @@ class SystemMonitor(QObject):
         
         # Translation timing
         self._last_translation_times = []  # List of recent translation times in ms
+        
+        # Network monitoring
+        self._last_net_io = psutil.net_io_counters()
+        self._last_net_time = time.time()
         
         # Check if GPU monitoring is available
         self._gpu_available = False
@@ -96,6 +104,27 @@ class SystemMonitor(QObject):
                     self.metrics.translation_speed_ms = int(
                         sum(self._last_translation_times) / len(self._last_translation_times)
                     )
+                
+                # Network speed calculation
+                current_net_io = psutil.net_io_counters()
+                current_time = time.time()
+                time_delta = current_time - self._last_net_time
+                
+                if time_delta > 0:
+                    bytes_down = current_net_io.bytes_recv - self._last_net_io.bytes_recv
+                    bytes_up = current_net_io.bytes_sent - self._last_net_io.bytes_sent
+                    self.metrics.network_speed_down = (bytes_down / time_delta) / 1024  # KB/s
+                    self.metrics.network_speed_up = (bytes_up / time_delta) / 1024  # KB/s
+                
+                self._last_net_io = current_net_io
+                self._last_net_time = current_time
+                
+                # Check internet connectivity
+                try:
+                    socket.create_connection(("8.8.8.8", 53), timeout=2)
+                    self.metrics.is_online = True
+                except (socket.timeout, socket.error, OSError):
+                    self.metrics.is_online = False
                 
                 # Emit signal for UI update
                 self.metrics_updated.emit(self.metrics)

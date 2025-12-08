@@ -1,8 +1,10 @@
 """Main Window - Main application window with header and tabs"""
 
+import socket
+import time
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QPushButton, QTabWidget, QMessageBox, QApplication)
-from PyQt6.QtCore import Qt
+                             QLabel, QPushButton, QTabWidget, QMessageBox, QApplication, QFrame)
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6.QtCore import QSize
 from firebase.auth_service import FirebaseAuthService
@@ -91,30 +93,58 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(15, 0, 15, 0)
 
         # Logo badge
-        logo_label = QLabel("AI")
+        logo_label = QLabel()
+        logo_pixmap = QPixmap("Icons/App.png")
+        if not logo_pixmap.isNull():
+            # Scale the icon to fit nicely in the header
+            logo_pixmap = logo_pixmap.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(logo_pixmap)
+        else:
+            # Fallback to text if image not found
+            logo_label.setText("AI")
         logo_label.setStyleSheet(f"""
-            background-color: {theme.ACCENT_PRIMARY};
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-            padding: 5px 10px;
+            padding: 5px;
             border-radius: 5px;
         """)
 
         # Title
         title = QLabel("AI Overlay Translate")
-        title.setStyleSheet(f"font-weight: bold; font-size: 14px; margin-left: 10px; color: {theme.TEXT_PRIMARY};")
+        title.setStyleSheet(f"font-weight: bold; font-size: 20px; margin-left: 10px; color: {theme.TEXT_PRIMARY};")
 
-        # Status badge
-        self.status_badge = QLabel("● Online")
-        self.status_badge.setStyleSheet(f"""
-            background-color: {theme.SUCCESS};
-            color: white;
-            font-size: 11px;
-            padding: 3px 10px;
-            border-radius: 10px;
-            margin-left: 10px;
+        # Status badge (network latency indicator)
+        # Status badge (network latency indicator)
+        self.status_badge = QFrame()
+        self.status_badge.setObjectName("status_badge")
+        self.status_badge.setFixedHeight(24)
+        self.status_badge.setStyleSheet("""
+            #status_badge {
+                background-color: #7A6969;
+                border-radius: 12px;
+            }
         """)
+        
+        badge_layout = QHBoxLayout(self.status_badge)
+        badge_layout.setContentsMargins(12, 0, 12, 0)
+        badge_layout.setSpacing(8)
+        
+        # Status dot (pure geometric shape)
+        self.status_dot = QFrame()
+        self.status_dot.setFixedSize(10, 10)
+        # Default gray
+        self.status_dot.setStyleSheet(f"background-color: #9CA3AF; border-radius: 5px; border: none;")
+        
+        # Status text
+        self.status_text = QLabel("--ms")
+        self.status_text.setStyleSheet("color: white; font-weight: bold; font-size: 12px; border: none; background: transparent;")
+        
+        badge_layout.addWidget(self.status_dot)
+        badge_layout.addWidget(self.status_text)
+        
+        # Network ping timer
+        self.ping_timer = QTimer()
+        self.ping_timer.timeout.connect(self._check_network_latency)
+        self.ping_timer.start(5000)  # Check every 5 seconds
+        self._check_network_latency()  # Initial check
 
         layout.addWidget(logo_label)
         layout.addWidget(title)
@@ -302,3 +332,31 @@ class MainWindow(QMainWindow):
             self.toggle_offset = None
             if hasattr(self, 'toggle_drag_start_pos'):
                 delattr(self, 'toggle_drag_start_pos')
+
+    def _check_network_latency(self):
+        """Check network latency by pinging Google DNS"""
+        try:
+            start_time = time.time()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            sock.connect(("8.8.8.8", 53))
+            sock.close()
+            latency_ms = int((time.time() - start_time) * 1000)
+            self._update_status_badge_style(True, latency_ms)
+        except (socket.timeout, socket.error, OSError):
+            self._update_status_badge_style(False, 0)
+
+    def _update_status_badge_style(self, is_online: bool, latency_ms: int):
+        """Update status badge appearance based on network status"""
+        if is_online:
+            dot_color = "#22C55E"  # Green
+            display_text = f"{latency_ms}ms"
+        else:
+            dot_color = "#EF4444"  # Red
+            display_text = "Offline"
+            
+        # Update dot color
+        self.status_dot.setStyleSheet(f"background-color: {dot_color}; border-radius: 5px; border: none;")
+        
+        # Update text
+        self.status_text.setText(display_text)
