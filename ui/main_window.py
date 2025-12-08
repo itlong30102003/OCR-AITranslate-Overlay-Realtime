@@ -12,6 +12,7 @@ from ui.tabs.history_tab import HistoryTab
 from ui.tabs.main_tab import MainTab
 from ui.tabs.settings_tab import SettingsTab
 from config import new_theme as theme
+from config.theme_config import theme_config
 
 
 class MainWindow(QMainWindow):
@@ -32,15 +33,10 @@ class MainWindow(QMainWindow):
         # Remove window frame for frameless window
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
-        # Apply dark theme
-        self.setStyleSheet(f"""
-            QMainWindow {{
-                background-color: {theme.BG_PRIMARY};
-            }}
-            QWidget {{
-                color: {theme.TEXT_PRIMARY};
-            }}
-        """)
+        # Apply theme from theme_config (supports Dark/Light switching)
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(theme_config.get_stylesheet())
 
         # Central widget
         central = QWidget()
@@ -54,9 +50,8 @@ class MainWindow(QMainWindow):
         header = self._create_header()
         main_layout.addWidget(header)
 
-        # Tab widget
+        # Tab widget - uses styles from theme_config.get_stylesheet()
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(theme.get_tab_style())
 
         # Create tabs
         self.tab_main = MainTab(app_instance=self.app)

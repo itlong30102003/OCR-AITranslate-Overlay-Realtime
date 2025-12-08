@@ -120,7 +120,7 @@ class MainTab(QWidget):
 
     def init_ui(self):
         """Initialize two-panel UI"""
-        self.setStyleSheet(f"background-color: {theme.BG_PRIMARY};")
+        # Background inherited from QApplication stylesheet
 
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -144,7 +144,7 @@ class MainTab(QWidget):
         """Create left panel with controls"""
         panel = QWidget()
         panel.setFixedWidth(theme.LEFT_PANEL_WIDTH)
-        panel.setStyleSheet(f"background-color: {theme.BG_PRIMARY}; border-right: 1px solid {theme.BORDER_DEFAULT};")
+        panel.setStyleSheet("border-right: 1px solid #374151;")
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -180,7 +180,7 @@ class MainTab(QWidget):
     def _create_performance_section(self):
         """Create performance metrics section"""
         group = QGroupBox("Điều khiển")
-        group.setStyleSheet(theme.get_group_box_style())
+        # Styling from theme_config
 
         layout = QVBoxLayout()
         layout.setSpacing(15)
@@ -188,7 +188,7 @@ class MainTab(QWidget):
         # Performance mode toggle
         mode_layout = QHBoxLayout()
         mode_label = QLabel("Chế độ hiệu suất")
-        mode_label.setStyleSheet(f"font-size: 12px; color: {theme.TEXT_SECONDARY}; font-weight: normal;")
+        mode_label.setStyleSheet("font-size: 12px;")
         self.perf_toggle = ModernToggle()
         self.perf_toggle.setChecked(True)
         mode_layout.addWidget(mode_label)
@@ -213,9 +213,9 @@ class MainTab(QWidget):
 
             header = QHBoxLayout()
             name_label = QLabel(name)
-            name_label.setStyleSheet(f"font-size: 12px; color: {theme.TEXT_PRIMARY}; font-weight: normal;")
+            name_label.setStyleSheet("font-size: 12px;")
             value_label = QLabel(value)
-            value_label.setStyleSheet(f"font-size: 12px; color: {color}; font-weight: normal;")
+            value_label.setStyleSheet(f"font-size: 12px; color: {color};")
             self.metric_labels[name] = value_label
             header.addWidget(name_label)
             header.addStretch()
@@ -239,7 +239,7 @@ class MainTab(QWidget):
     def _create_modes_section(self):
         """Create translation modes section"""
         group = QGroupBox("Chế độ dịch")
-        group.setStyleSheet(theme.get_group_box_style())
+        # Styling from theme_config
 
         layout = QVBoxLayout()
         layout.setSpacing(10)
@@ -254,22 +254,13 @@ class MainTab(QWidget):
 
         for mode_name, checked, enabled in modes:
             mode_widget = QFrame()
-            mode_widget.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {theme.BG_SECONDARY};
-                    border-radius: 6px;
-                }}
-                QFrame:hover {{
-                    background-color: {theme.BG_TERTIARY if enabled else theme.BG_SECONDARY};
-                }}
-            """)
+            mode_widget.setStyleSheet("QFrame { border-radius: 6px; border: 1px solid #374151; }")
 
             mode_layout = QHBoxLayout(mode_widget)
             mode_layout.setContentsMargins(12, 8, 12, 8)
 
             label = QLabel(mode_name)
-            label_color = theme.TEXT_PRIMARY if enabled else theme.TEXT_MUTED
-            label.setStyleSheet(f"font-size: 13px; color: {label_color}; font-weight: normal;")
+            label.setStyleSheet("font-size: 13px;")
 
             toggle = ModernToggle()
             toggle.setChecked(checked)
@@ -292,7 +283,7 @@ class MainTab(QWidget):
     def _create_language_section(self):
         """Create language selection section"""
         group = QGroupBox("Ngôn ngữ")
-        group.setStyleSheet(theme.get_group_box_style())
+        # Styling from theme_config
 
         layout = QHBoxLayout()
         layout.setSpacing(15)
@@ -300,11 +291,11 @@ class MainTab(QWidget):
         # Source language
         source_layout = QVBoxLayout()
         source_label = QLabel("Ngôn ngữ nguồn")
-        source_label.setStyleSheet(f"font-size: 11px; color: {theme.TEXT_SECONDARY}; margin-bottom: 5px; font-weight: normal;")
+        source_label.setStyleSheet("font-size: 11px; margin-bottom: 5px;")
         self.source_combo = QComboBox()
         self.source_combo.addItems(LanguageConfig.get_source_languages())
         self.source_combo.setCurrentText("Auto (Detect)")
-        self.source_combo.setStyleSheet(theme.get_combo_box_style())
+        # Styling from theme_config
         self.source_combo.currentTextChanged.connect(self._on_source_language_changed)
         source_layout.addWidget(source_label)
         source_layout.addWidget(self.source_combo)
@@ -312,11 +303,11 @@ class MainTab(QWidget):
         # Target language
         target_layout = QVBoxLayout()
         target_label = QLabel("Ngôn ngữ đích")
-        target_label.setStyleSheet(f"font-size: 11px; color: {theme.TEXT_SECONDARY}; margin-bottom: 5px; font-weight: normal;")
+        target_label.setStyleSheet("font-size: 11px; margin-bottom: 5px;")
         self.target_combo = QComboBox()
         self.target_combo.addItems(LanguageConfig.get_target_languages())
         self.target_combo.setCurrentText("Vietnamese")
-        self.target_combo.setStyleSheet(theme.get_combo_box_style())
+        # Styling from theme_config
         self.target_combo.currentTextChanged.connect(self._on_target_language_changed)
         target_layout.addWidget(target_label)
         target_layout.addWidget(self.target_combo)
@@ -331,7 +322,7 @@ class MainTab(QWidget):
         """Create right panel with preview and regions - scrollable"""
         # Main panel container
         panel = QWidget()
-        panel.setStyleSheet(f"background-color: {theme.BG_PRIMARY};")
+        # Background inherited from theme_config
         
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(0, 0, 0, 0)
@@ -340,16 +331,10 @@ class MainTab(QWidget):
         # Scrollable content area
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet(f"""
-            QScrollArea {{
-                border: none;
-                background-color: {theme.BG_PRIMARY};
-            }}
-        """)
+        scroll_area.setStyleSheet("QScrollArea { border: none; }")
         
         # Content widget inside scroll area
         content_widget = QWidget()
-        content_widget.setStyleSheet(f"background-color: {theme.BG_PRIMARY};")
         layout = QVBoxLayout(content_widget)
         layout.setContentsMargins(25, 25, 25, 25)
         layout.setSpacing(20)
@@ -358,50 +343,43 @@ class MainTab(QWidget):
         header_layout = QHBoxLayout()
 
         preview_label = QLabel("Xem trước")
-        preview_label.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {theme.TEXT_PRIMARY};")
+        preview_label.setStyleSheet("font-size: 18px; font-weight: bold;")
 
         target_label = QLabel("Target window:")
-        target_label.setStyleSheet(f"font-size: 12px; color: {theme.TEXT_SECONDARY};")
+        target_label.setStyleSheet("font-size: 12px;")
 
         self.window_combo = QComboBox()
         self.window_combo.setFixedWidth(300)
-        self.window_combo.setStyleSheet(theme.get_combo_box_style())
+        # Styling from theme_config
         self.window_combo.currentIndexChanged.connect(self.on_window_combo_changed)
 
-        # Refresh button
-        self.refresh_btn = QPushButton("🔄")
+        # Refresh button - use text symbol for theme support
+        self.refresh_btn = QPushButton("↻")
         self.refresh_btn.setFixedSize(35, 35)
-        self.refresh_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {theme.BG_TERTIARY};
-                color: white;
-                font-size: 14px;
+        self.refresh_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 18px;
                 border-radius: 5px;
-            }}
-            QPushButton:hover {{
-                background-color: {theme.ACCENT_PRIMARY};
-            }}
+                border: 1px solid #374151;
+            }
         """)
         self.refresh_btn.clicked.connect(self.refresh_window_list)
 
         # Live preview toggle button
-        self.live_preview_btn = QPushButton("📺 Live")
+        self.live_preview_btn = QPushButton("Live")
         self.live_preview_btn.setFixedHeight(35)
         self.live_preview_btn.setCheckable(True)
-        self.live_preview_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {theme.BG_TERTIARY};
-                color: white;
+        self.live_preview_btn.setStyleSheet("""
+            QPushButton {
                 font-size: 12px;
                 padding: 0 12px;
                 border-radius: 5px;
-            }}
-            QPushButton:hover {{
-                background-color: {theme.ACCENT_PRIMARY};
-            }}
-            QPushButton:checked {{
-                background-color: {theme.SUCCESS};
-            }}
+                border: 1px solid #374151;
+            }
+            QPushButton:checked {
+                background-color: #16a34a;
+                color: white;
+            }
         """)
         self.live_preview_btn.clicked.connect(self._toggle_live_preview)
 
@@ -416,43 +394,37 @@ class MainTab(QWidget):
 
         # Status label
         self.status_label = QLabel("Chọn cửa sổ để bắt đầu")
-        self.status_label.setStyleSheet(f"color: {theme.TEXT_SECONDARY}; font-size: 12px;")
+        self.status_label.setStyleSheet("font-size: 12px;")
         layout.addWidget(self.status_label)
 
         # Scan counter
         self.scan_label = QLabel("Scan: 0")
-        self.scan_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        self.scan_label.setStyleSheet("font-size: 11px;")
 
         # Preview section
         self.preview_section = QWidget()
         preview_section_layout = QVBoxLayout(self.preview_section)
         preview_section_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Instruction label
+        # Instruction label - border only
         self.instruction_label = QLabel("📍 Chọn cửa sổ, bật Live preview rồi kéo thả để chọn vùng")
-        self.instruction_label.setStyleSheet(f"""
-            color: {theme.INFO};
+        self.instruction_label.setStyleSheet("""
             font-size: 12px;
             padding: 10px;
-            background-color: #1e3a5f;
             border-radius: 5px;
+            border: 1px solid #3b82f6;
         """)
         self.instruction_label.setWordWrap(True)
         preview_section_layout.addWidget(self.instruction_label)
 
-        # Preview container (no scroll - fits to content)
+        # Preview container - border only
         preview_container = QWidget()
-        preview_container.setStyleSheet(f"""
-            background-color: {theme.BG_SECONDARY};
-            border: 1px solid {theme.BORDER_DEFAULT};
-            border-radius: 8px;
-        """)
+        preview_container.setStyleSheet("border: 1px solid #374151; border-radius: 8px;")
         preview_container_layout = QVBoxLayout(preview_container)
-        preview_container_layout.setContentsMargins(0, 0, 0, 0)  # No padding to avoid offset
+        preview_container_layout.setContentsMargins(0, 0, 0, 0)
         
         self.window_preview = QLabel()
-        self.window_preview.setStyleSheet(f"background-color: {theme.BG_SECONDARY};")
-        self.window_preview.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)  # Align top-left for accurate selection
+        self.window_preview.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.window_preview.setText("Chọn cửa sổ để xem preview")
         self.window_preview.setScaledContents(False)
         self.window_preview.mousePressEvent = self.on_preview_mouse_press
@@ -472,15 +444,13 @@ class MainTab(QWidget):
         self.preview_scale = 1.0
         self.original_window_image = None
 
-        # Selection hint label
+        # Selection hint label - border only
         self.selection_hint = QLabel("💡 Kéo thả trên màn hình preview để chọn vùng theo dõi")
-        self.selection_hint.setStyleSheet(f"""
-            color: {theme.TEXT_SECONDARY};
+        self.selection_hint.setStyleSheet("""
             font-size: 12px;
             padding: 8px 12px;
-            background-color: {theme.BG_SECONDARY};
             border-radius: 5px;
-            margin-top: 5px;
+            border: 1px solid #374151;
         """)
         self.selection_hint.setWordWrap(True)
         layout.addWidget(self.selection_hint)
