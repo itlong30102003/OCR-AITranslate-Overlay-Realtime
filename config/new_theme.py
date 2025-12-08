@@ -144,7 +144,7 @@ def get_window_button_style():
     return f"""
         QPushButton {{
             background-color: transparent;
-            color: {TEXT_SECONDARY};
+            color: white;
             border: none;
             font-size: 18px;
         }}
@@ -159,7 +159,7 @@ def get_close_button_style():
     return f"""
         QPushButton {{
             background-color: transparent;
-            color: {TEXT_SECONDARY};
+            color: white;
             border: none;
             font-size: 18px;
         }}

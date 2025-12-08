@@ -169,16 +169,62 @@ class MainWindow(QMainWindow):
         logout_btn.clicked.connect(self.handle_logout)
         layout.addWidget(logout_btn)
 
-        # Window controls
-        min_btn = QPushButton("−")
-        max_btn = QPushButton("□")
-        close_btn = QPushButton("×")
-
-        for btn in [min_btn, max_btn, close_btn]:
-            btn.setFixedSize(35, 35)
-            btn.setStyleSheet(theme.get_window_button_style())
-
-        close_btn.setStyleSheet(theme.get_close_button_style())
+        # Window controls - vẽ icon thay vì dùng text
+        from PyQt6.QtGui import QPainter, QPen, QColor
+        
+        class WindowControlButton(QPushButton):
+            def __init__(self, button_type, parent=None):
+                super().__init__(parent)
+                self.button_type = button_type  # 'min', 'max', 'close'
+                self.hover = False
+                self.setFixedSize(35, 35)
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+                
+            def enterEvent(self, event):
+                self.hover = True
+                self.update()
+                super().enterEvent(event)
+                
+            def leaveEvent(self, event):
+                self.hover = False
+                self.update()
+                super().leaveEvent(event)
+                
+            def paintEvent(self, event):
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                
+                # Background khi hover
+                if self.hover:
+                    if self.button_type == 'close':
+                        painter.fillRect(self.rect(), QColor("#dc2626"))
+                    else:
+                        painter.fillRect(self.rect(), QColor("#334155"))
+                
+                # Vẽ icon
+                pen = QPen(QColor("#FFFFFF"))
+                pen.setWidth(2)
+                painter.setPen(pen)
+                
+                center_x = self.width() // 2
+                center_y = self.height() // 2
+                
+                if self.button_type == 'min':
+                    # Vẽ dấu trừ (minimize)
+                    painter.drawLine(center_x - 6, center_y, center_x + 6, center_y)
+                    
+                elif self.button_type == 'max':
+                    # Vẽ hình vuông (maximize)
+                    painter.drawRect(center_x - 5, center_y - 5, 10, 10)
+                    
+                elif self.button_type == 'close':
+                    # Vẽ dấu X (close)
+                    painter.drawLine(center_x - 5, center_y - 5, center_x + 5, center_y + 5)
+                    painter.drawLine(center_x + 5, center_y - 5, center_x - 5, center_y + 5)
+        
+        min_btn = WindowControlButton('min')
+        max_btn = WindowControlButton('max')
+        close_btn = WindowControlButton('close')
 
         min_btn.clicked.connect(self.showMinimized)
         max_btn.clicked.connect(self._toggle_maximize)
