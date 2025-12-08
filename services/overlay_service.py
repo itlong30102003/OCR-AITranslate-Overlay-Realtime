@@ -1,7 +1,7 @@
 """Overlay Service - Handles overlay display management"""
 
 import threading
-from typing import Dict, List
+from typing import Dict, List, Set
 from overlay.tkinter_overlay import get_overlay
 from overlay.positioned_overlay_qt import get_positioned_overlay_qt
 
@@ -27,6 +27,9 @@ class OverlayService:
         # Positioned overlay (new)
         self.positioned_overlay = None  # Lazy initialization
         self.positioned_text_boxes: Dict[int, List] = {}  # Store text boxes by region
+        
+        # Track deleted regions to prevent race conditions
+        self.deleted_regions: Set[int] = set()
 
         self._lock = threading.Lock()  # Thread-safe lock for async updates
         print(f"[Overlay Service] Initialized (enabled: {enabled}, mode: {overlay_mode})")
@@ -152,6 +155,11 @@ class OverlayService:
         try:
             # Thread-safe update
             with self._lock:
+                # Check if this region was deleted (race condition prevention)
+                if region_idx in self.deleted_regions:
+                    print(f"[Overlay Service] Skipping update for deleted region {region_idx}")
+                    return
+                    
                 # Store text boxes for this region
                 self.positioned_text_boxes[region_idx] = translated_boxes
 
@@ -208,14 +216,16 @@ class OverlayService:
         try:
             # Thread-safe removal
             with self._lock:
+                # Mark as deleted FIRST to prevent async updates from recreating it
+                self.deleted_regions.add(region_id)
+                
                 # Remove this region's text boxes
                 if region_id in self.positioned_text_boxes:
                     removed_count = len(self.positioned_text_boxes[region_id])
                     del self.positioned_text_boxes[region_id]
                     print(f"[Overlay Service] Removed region {region_id} ({removed_count} boxes)")
                 else:
-                    print(f"[Overlay Service] Region {region_id} not found in overlay")
-                    return
+                    print(f"[Overlay Service] Region {region_id} marked as deleted (not yet in overlay)")
 
                 # Flatten remaining text boxes from all other regions
                 all_boxes = []

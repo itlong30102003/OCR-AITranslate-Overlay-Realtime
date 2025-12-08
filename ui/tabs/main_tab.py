@@ -17,94 +17,53 @@ from services.system_monitor import get_system_monitor
 from config.language_config import LanguageConfig
 
 
-class RegionThumbnail(QFrame):
-    """Widget hiển thị thumbnail cho một region với nút stop"""
+class RegionOverlayBox(QWidget):
+    """Widget overlay hiển thị box và nút close trực tiếp trên preview cho một region"""
 
-    stop_requested = pyqtSignal(int)
+    close_requested = pyqtSignal(int)
 
-    def __init__(self, region_id: int, coords: Tuple[int, int, int, int]):
-        super().__init__()
+    def __init__(self, region_id: int, parent=None):
+        super().__init__(parent)
         self.region_id = region_id
-        self.coords = coords
-        self.setFrameStyle(QFrame.Shape.Box)
-        self.setLineWidth(2)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setStyleSheet("background: transparent;")
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Title layout with stop button
-        title_layout = QHBoxLayout()
-        title_layout.setContentsMargins(0, 0, 0, 0)
-
-        title = QLabel(f"Vùng {region_id + 1}")
-        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        title.setStyleSheet(f"font-weight: bold; color: {theme.TEXT_PRIMARY}; font-size: 13px; padding: 5px;")
-        title_layout.addWidget(title)
-
-        title_layout.addStretch()
-
-        # Stop button
-        stop_btn = QPushButton("✕")
-        stop_btn.setFixedSize(22, 22)
-        stop_btn.setStyleSheet(f"""
+        # Close button ở góc phải trên
+        self.close_btn = QPushButton("✕", self)
+        self.close_btn.setFixedSize(20, 20)
+        self.close_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {theme.ERROR};
                 color: white;
-                border-radius: 11px;
+                border-radius: 10px;
                 font-weight: bold;
-                font-size: 14px;
+                font-size: 12px;
                 padding: 0px;
             }}
             QPushButton:hover {{
                 background-color: #b91c1c;
             }}
         """)
-        stop_btn.setToolTip("Dừng theo dõi vùng này")
-        stop_btn.clicked.connect(lambda: self.stop_requested.emit(self.region_id))
-        title_layout.addWidget(stop_btn)
+        self.close_btn.setToolTip(f"Xóa vùng {region_id + 1}")
+        self.close_btn.clicked.connect(lambda: self.close_requested.emit(self.region_id))
 
-        layout.addLayout(title_layout)
+    def resizeEvent(self, event):
+        """Đặt nút close ở góc phải trên của box"""
+        super().resizeEvent(event)
+        # Position close button at top-right corner
+        btn_x = self.width() - self.close_btn.width() - 2
+        btn_y = 2
+        self.close_btn.move(btn_x, btn_y)
 
-        # Thumbnail label
-        self.thumbnail_label = QLabel()
-        self.thumbnail_label.setFixedSize(200, 150)
-        self.thumbnail_label.setStyleSheet(f"border: 1px solid {theme.BORDER_DEFAULT}; background-color: {theme.BG_PRIMARY};")
-        self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.thumbnail_label)
-
-        # Status label
-        self.status_label = QLabel("Đang giám sát")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet(f"color: {theme.SUCCESS}; font-size: 11px; padding: 2px;")
-        layout.addWidget(self.status_label)
-
-        self.setStyleSheet(f"""
-            RegionThumbnail {{
-                background-color: {theme.BG_SECONDARY};
-                border: 1px solid {theme.BORDER_DEFAULT};
-                border-radius: 6px;
-            }}
-        """)
-
-    def update_thumbnail(self, pil_image: Image.Image):
-        """Cập nhật thumbnail từ PIL Image"""
-        try:
-            pil_image = pil_image.copy()
-            if pil_image.mode != 'RGB':
-                pil_image = pil_image.convert('RGB')
-
-            pil_image.thumbnail((200, 150), Image.LANCZOS)
-            width, height = pil_image.size
-
-            img_data = pil_image.tobytes('raw', 'RGB')
-            bytes_per_line = width * 3
-            qimage = QImage(img_data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-            qimage = qimage.copy()
-
-            pixmap = QPixmap.fromImage(qimage)
-            self.thumbnail_label.setPixmap(pixmap)
-        except Exception as e:
-            print(f"[RegionThumbnail] Error updating thumbnail: {e}")
+    def paintEvent(self, event):
+        """Vẽ viền cho region box"""
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen = QPen(QColor(theme.ACCENT_PRIMARY), 2)
+        painter.setPen(pen)
+        painter.drawRect(1, 1, self.width() - 2, self.height() - 2)
+        painter.end()
 
 
 class MainTab(QWidget):
@@ -124,7 +83,7 @@ class MainTab(QWidget):
         self.region_id_counter = 0
         self.region_monitors: Dict[int, WindowRegionMonitor] = {}
         self.regions: Dict[int, Tuple[int, int, int, int]] = {}
-        self.region_widgets: Dict[int, RegionThumbnail] = {}
+        self.region_overlay_boxes: Dict[int, RegionOverlayBox] = {}  # Overlay boxes on preview
         self.scan_counter = 0
 
         # Store latest captured images for thumbnail updates
@@ -140,16 +99,14 @@ class MainTab(QWidget):
         self.cpu_percent = 0
         self.gpu_percent = 0
 
-        # Thumbnail update timer
-        self.thumbnail_update_timer = QTimer()
-        self.thumbnail_update_timer.timeout.connect(self._update_thumbnails)
-        self.thumbnail_update_timer.setInterval(50)
-
         # Live preview timer - updates preview in real-time
         self.live_preview_timer = QTimer()
         self.live_preview_timer.timeout.connect(self._update_live_preview)
         self.live_preview_timer.setInterval(500)  # Update every 500ms
         self.is_live_preview_enabled = False
+        
+        # Set to track regions pending deletion (to handle race conditions)
+        self.pending_delete_regions: set = set()
 
         # Start system monitor and connect signal
         self.system_monitor = get_system_monitor()
@@ -520,30 +477,6 @@ class MainTab(QWidget):
         """)
         self.selection_hint.setWordWrap(True)
         layout.addWidget(self.selection_hint)
-
-        # Regions display area
-        regions_title = QLabel("Các vùng đang giám sát:")
-        regions_title.setStyleSheet(f"color: {theme.TEXT_PRIMARY}; font-size: 14px; font-weight: bold; margin-top: 10px;")
-        layout.addWidget(regions_title)
-
-        self.regions_scroll = QScrollArea()
-        self.regions_scroll.setWidgetResizable(True)
-        self.regions_scroll.setFixedHeight(250)  # Fixed height for regions section
-        self.regions_scroll.setStyleSheet(f"""
-            QScrollArea {{
-                border: 1px solid {theme.BORDER_DEFAULT};
-                border-radius: 8px;
-                background-color: {theme.BG_SECONDARY};
-            }}
-        """)
-
-        self.regions_container = QWidget()
-        self.regions_layout = QGridLayout(self.regions_container)
-        self.regions_layout.setContentsMargins(15, 15, 15, 15)
-        self.regions_layout.setSpacing(15)
-
-        self.regions_scroll.setWidget(self.regions_container)
-        layout.addWidget(self.regions_scroll)
         
         # Add stretch at end to push content to top
         layout.addStretch()
@@ -610,15 +543,6 @@ class MainTab(QWidget):
 
         except Exception as e:
             print(f"[MainTab] Error updating metrics: {e}")
-
-    def _update_thumbnails(self):
-        """Update thumbnails from main thread"""
-        try:
-            for region_id, image in self.latest_region_images.items():
-                if image and region_id in self.region_widgets:
-                    self.region_widgets[region_id].update_thumbnail(image)
-        except Exception as e:
-            print(f"[MainTab] Error in _update_thumbnails: {e}")
 
     def _get_preview_dimensions(self):
         """Get fixed preview dimensions based on window state"""
@@ -767,6 +691,9 @@ class MainTab(QWidget):
 
             self.window_preview.setPixmap(self.preview_pixmap)
             # Don't set fixed size - let it fit within the scroll area
+            
+            # Update overlay boxes positions after scale change
+            self._update_all_overlay_boxes()
 
             print(f"[MainTab] Preview updated: {display_width}x{display_height}")
 
@@ -860,6 +787,9 @@ class MainTab(QWidget):
 
             self.window_preview.setPixmap(self.preview_pixmap)
             # Don't set fixed size - let it fit within the scroll area
+            
+            # Update overlay boxes positions after scale change
+            self._update_all_overlay_boxes()
 
         except Exception as e:
             print(f"[MainTab] Error in live preview: {e}")
@@ -948,18 +878,16 @@ class MainTab(QWidget):
             self.region_monitors[region_id] = monitor
             self.regions[region_id] = region_bbox
 
-            widget = RegionThumbnail(region_id, region_bbox)
-            widget.stop_requested.connect(self.stop_region)
-            self.region_widgets[region_id] = widget
-
             self.latest_region_images[region_id] = None
 
-            grid_position = len(self.region_widgets) - 1
-            row = grid_position // 3
-            col = grid_position % 3
-            self.regions_layout.addWidget(widget, row, col)
+            # Create overlay box on preview
+            overlay_box = RegionOverlayBox(region_id, self.window_preview)
+            overlay_box.close_requested.connect(self.stop_region)
+            self.region_overlay_boxes[region_id] = overlay_box
+            self._update_overlay_box_position(region_id)
+            overlay_box.show()
 
-            print(f"[MainTab] ✓ Added region ID={region_id}")
+            print(f"[MainTab] Added region ID={region_id}")
 
             if self.is_monitoring:
                 self.status_label.setText(f"Đang giám sát {len(self.regions)} vùng")
@@ -972,7 +900,13 @@ class MainTab(QWidget):
         """Stop monitoring a specific region"""
         print(f"[MainTab] Stopping region ID={region_id}")
 
+        # Mark as pending deletion to prevent race conditions
+        self.pending_delete_regions.add(region_id)
+
         try:
+            # Clear overlay FIRST to prevent it from being recreated
+            self.app.overlay_service.clear_region_overlay(region_id)
+            
             if region_id in self.region_monitors:
                 del self.region_monitors[region_id]
 
@@ -982,15 +916,12 @@ class MainTab(QWidget):
             if region_id in self.latest_region_images:
                 del self.latest_region_images[region_id]
 
-            self.app.overlay_service.clear_region_overlay(region_id)
-
-            if region_id in self.region_widgets:
-                widget = self.region_widgets[region_id]
-                self.regions_layout.removeWidget(widget)
-                widget.deleteLater()
-                del self.region_widgets[region_id]
-
-            self._relayout_widgets()
+            # Remove overlay box from preview
+            if region_id in self.region_overlay_boxes:
+                overlay_box = self.region_overlay_boxes[region_id]
+                overlay_box.hide()
+                overlay_box.deleteLater()
+                del self.region_overlay_boxes[region_id]
 
             remaining = len(self.region_monitors)
             self.status_label.setText(f"Đang giám sát {remaining} vùng")
@@ -1000,16 +931,30 @@ class MainTab(QWidget):
 
         except Exception as e:
             print(f"[MainTab] Error stopping region: {e}")
+        finally:
+            # Remove from pending after a short delay to ensure all async operations complete
+            QTimer.singleShot(500, lambda: self.pending_delete_regions.discard(region_id))
 
-    def _relayout_widgets(self):
-        """Re-arrange widgets in grid"""
-        for widget in self.region_widgets.values():
-            self.regions_layout.removeWidget(widget)
+    def _update_overlay_box_position(self, region_id: int):
+        """Update overlay box position based on current preview scale"""
+        if region_id not in self.region_overlay_boxes or region_id not in self.regions:
+            return
+        
+        overlay_box = self.region_overlay_boxes[region_id]
+        region_bbox = self.regions[region_id]  # (x, y, width, height) in original image coords
+        
+        # Scale to preview coordinates
+        x = int(region_bbox[0] * self.preview_scale)
+        y = int(region_bbox[1] * self.preview_scale)
+        w = int(region_bbox[2] * self.preview_scale)
+        h = int(region_bbox[3] * self.preview_scale)
+        
+        overlay_box.setGeometry(x, y, w, h)
 
-        for i, widget in enumerate(self.region_widgets.values()):
-            row = i // 3
-            col = i % 3
-            self.regions_layout.addWidget(widget, row, col)
+    def _update_all_overlay_boxes(self):
+        """Update all overlay boxes positions after preview scale changes"""
+        for region_id in self.region_overlay_boxes.keys():
+            self._update_overlay_box_position(region_id)
 
     # === Monitoring control ===
     def start_monitoring(self):
@@ -1030,7 +975,6 @@ class MainTab(QWidget):
             # Hide instruction label to avoid duplicate with status_label
             self.instruction_label.setVisible(False)
 
-            self.thumbnail_update_timer.start()
             self._start_monitoring_loop()
 
             time.sleep(0.5)
@@ -1064,6 +1008,10 @@ class MainTab(QWidget):
                         continue
 
                     for region_id, monitor in monitors_snapshot.items():
+                        # Skip regions pending deletion
+                        if region_id in self.pending_delete_regions:
+                            continue
+                            
                         current_image = monitor.capture_current()
                         if current_image and region_id in self.latest_region_images:
                             self.latest_region_images[region_id] = current_image.copy()
@@ -1071,6 +1019,10 @@ class MainTab(QWidget):
                         has_changed, changed_image = monitor.check_and_capture()
 
                         if has_changed and changed_image:
+                            # Double-check region not pending deletion before processing
+                            if region_id in self.pending_delete_regions:
+                                continue
+                                
                             scan_counter += 1
                             abs_bbox = monitor.get_absolute_bbox()
 
@@ -1101,16 +1053,17 @@ class MainTab(QWidget):
         """Stop monitoring"""
         try:
             self.is_monitoring = False
-            self.thumbnail_update_timer.stop()
 
             self.region_monitors.clear()
             self.regions.clear()
             self.latest_region_images.clear()
+            self.pending_delete_regions.clear()
 
-            for widget in self.region_widgets.values():
-                self.regions_layout.removeWidget(widget)
-                widget.deleteLater()
-            self.region_widgets.clear()
+            # Clear overlay boxes on preview
+            for overlay_box in self.region_overlay_boxes.values():
+                overlay_box.hide()
+                overlay_box.deleteLater()
+            self.region_overlay_boxes.clear()
 
             self.app.overlay_service.clear_positioned_overlay()
 
