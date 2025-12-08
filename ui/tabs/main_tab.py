@@ -353,14 +353,20 @@ class MainTab(QWidget):
         # Styling from theme_config
         self.window_combo.currentIndexChanged.connect(self.on_window_combo_changed)
 
-        # Refresh button - use text symbol for theme support
-        self.refresh_btn = QPushButton("↻")
-        self.refresh_btn.setFixedSize(35, 35)
+        # Refresh button - dùng emoji
+        self.refresh_btn = QPushButton("🔄")
+        self.refresh_btn.setObjectName("refresh_btn")
+        self.refresh_btn.setFixedSize(40, 40)  # Kích thước cố định
         self.refresh_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 18px;
+            QPushButton#refresh_btn {
+                background-color: #374151;
+                color: #FFFFFF;
+                font-size: 22px;
                 border-radius: 5px;
-                border: 1px solid #374151;
+                padding: 2px;
+            }
+            QPushButton#refresh_btn:hover {
+                background-color: #4b5563;
             }
         """)
         self.refresh_btn.clicked.connect(self.refresh_window_list)

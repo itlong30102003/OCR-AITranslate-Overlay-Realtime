@@ -254,16 +254,19 @@ class MonitorTab(QWidget):
         # Remove auto-update on combo change
         window_select_layout.addWidget(self.window_combo)
 
+
         self.refresh_windows_btn = QPushButton("🔄")
+        self.refresh_windows_btn.setObjectName("refresh_btn")
+        self.refresh_windows_btn.setFixedSize(40, 40)  # Kích thước cố định
         self.refresh_windows_btn.setStyleSheet("""
-            QPushButton {
+            QPushButton#refresh_btn {
                 background-color: #374151;
-                color: white;
-                font-size: 14px;
-                padding: 8px 12px;
+                color: #FFFFFF;
+                font-size: 22px;
                 border-radius: 5px;
+                padding: 2px;
             }
-            QPushButton:hover {
+            QPushButton#refresh_btn:hover {
                 background-color: #4b5563;
             }
         """)
