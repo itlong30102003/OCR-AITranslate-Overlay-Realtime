@@ -364,11 +364,29 @@ class MainTab(QWidget):
         return group
 
     def _create_right_panel(self):
-        """Create right panel with preview and regions"""
+        """Create right panel with preview and regions - scrollable"""
+        # Main panel container
         panel = QWidget()
         panel.setStyleSheet(f"background-color: {theme.BG_PRIMARY};")
-
-        layout = QVBoxLayout(panel)
+        
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(0)
+        
+        # Scrollable content area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                border: none;
+                background-color: {theme.BG_PRIMARY};
+            }}
+        """)
+        
+        # Content widget inside scroll area
+        content_widget = QWidget()
+        content_widget.setStyleSheet(f"background-color: {theme.BG_PRIMARY};")
+        layout = QVBoxLayout(content_widget)
         layout.setContentsMargins(25, 25, 25, 25)
         layout.setSpacing(20)
 
@@ -458,30 +476,27 @@ class MainTab(QWidget):
         self.instruction_label.setWordWrap(True)
         preview_section_layout.addWidget(self.instruction_label)
 
-        # Preview scroll area
-        preview_scroll = QScrollArea()
-        preview_scroll.setWidgetResizable(False)
-        preview_scroll.setMinimumHeight(300)
-        preview_scroll.setMaximumHeight(400)
-        preview_scroll.setStyleSheet(f"""
-            QScrollArea {{
-                border: 1px solid {theme.BORDER_DEFAULT};
-                border-radius: 8px;
-                background-color: {theme.BG_SECONDARY};
-            }}
+        # Preview container (no scroll - fits to content)
+        preview_container = QWidget()
+        preview_container.setStyleSheet(f"""
+            background-color: {theme.BG_SECONDARY};
+            border: 1px solid {theme.BORDER_DEFAULT};
+            border-radius: 8px;
         """)
-
+        preview_container_layout = QVBoxLayout(preview_container)
+        preview_container_layout.setContentsMargins(0, 0, 0, 0)  # No padding to avoid offset
+        
         self.window_preview = QLabel()
-        self.window_preview.setStyleSheet(f"background-color: {theme.BG_SECONDARY}; min-height: 250px;")
-        self.window_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.window_preview.setStyleSheet(f"background-color: {theme.BG_SECONDARY};")
+        self.window_preview.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)  # Align top-left for accurate selection
         self.window_preview.setText("Chọn cửa sổ để xem preview")
         self.window_preview.setScaledContents(False)
         self.window_preview.mousePressEvent = self.on_preview_mouse_press
         self.window_preview.mouseMoveEvent = self.on_preview_mouse_move
         self.window_preview.mouseReleaseEvent = self.on_preview_mouse_release
 
-        preview_scroll.setWidget(self.window_preview)
-        preview_section_layout.addWidget(preview_scroll)
+        preview_container_layout.addWidget(self.window_preview)
+        preview_section_layout.addWidget(preview_container)
 
         self.preview_section.setVisible(True)
         layout.addWidget(self.preview_section)
@@ -493,7 +508,7 @@ class MainTab(QWidget):
         self.preview_scale = 1.0
         self.original_window_image = None
 
-        # Selection hint label (replaces add_region_btn)
+        # Selection hint label
         self.selection_hint = QLabel("💡 Kéo thả trên màn hình preview để chọn vùng theo dõi")
         self.selection_hint.setStyleSheet(f"""
             color: {theme.TEXT_SECONDARY};
@@ -513,7 +528,7 @@ class MainTab(QWidget):
 
         self.regions_scroll = QScrollArea()
         self.regions_scroll.setWidgetResizable(True)
-        self.regions_scroll.setMinimumHeight(200)
+        self.regions_scroll.setFixedHeight(250)  # Fixed height for regions section
         self.regions_scroll.setStyleSheet(f"""
             QScrollArea {{
                 border: 1px solid {theme.BORDER_DEFAULT};
@@ -529,6 +544,12 @@ class MainTab(QWidget):
 
         self.regions_scroll.setWidget(self.regions_container)
         layout.addWidget(self.regions_scroll)
+        
+        # Add stretch at end to push content to top
+        layout.addStretch()
+
+        scroll_area.setWidget(content_widget)
+        panel_layout.addWidget(scroll_area)
 
         return panel
 
@@ -598,6 +619,20 @@ class MainTab(QWidget):
                     self.region_widgets[region_id].update_thumbnail(image)
         except Exception as e:
             print(f"[MainTab] Error in _update_thumbnails: {e}")
+
+    def _get_preview_dimensions(self):
+        """Get fixed preview dimensions based on window state"""
+        try:
+            main_window = self.window()
+            if main_window and main_window.isMaximized():
+                # Maximized window: larger preview
+                return 1000, 600
+            else:
+                # Normal window: standard preview
+                return 700, 420
+        except:
+            # Fallback to normal size
+            return 700, 420
 
     # === Window capture methods (migrated from MonitorTab) ===
     def refresh_window_list(self):
@@ -704,8 +739,8 @@ class MainTab(QWidget):
             if pil_image.mode != 'RGB':
                 pil_image = pil_image.convert('RGB')
 
-            max_width = 700
-            max_height = 380
+            # Get dynamic preview dimensions based on panel size
+            max_width, max_height = self._get_preview_dimensions()
             img_width, img_height = pil_image.size
 
             self.preview_scale = min(max_width / img_width, max_height / img_height, 1.0)
@@ -731,8 +766,7 @@ class MainTab(QWidget):
             """)
 
             self.window_preview.setPixmap(self.preview_pixmap)
-            self.window_preview.setMinimumSize(display_width, display_height)
-            self.window_preview.setMaximumSize(display_width, display_height)
+            # Don't set fixed size - let it fit within the scroll area
 
             print(f"[MainTab] Preview updated: {display_width}x{display_height}")
 
@@ -798,8 +832,8 @@ class MainTab(QWidget):
             if pil_image.mode != 'RGB':
                 pil_image = pil_image.convert('RGB')
 
-            max_width = 700
-            max_height = 380
+            # Get dynamic preview dimensions based on panel size
+            max_width, max_height = self._get_preview_dimensions()
             img_width, img_height = pil_image.size
 
             self.preview_scale = min(max_width / img_width, max_height / img_height, 1.0)
@@ -825,8 +859,7 @@ class MainTab(QWidget):
             """)
 
             self.window_preview.setPixmap(self.preview_pixmap)
-            self.window_preview.setMinimumSize(display_width, display_height)
-            self.window_preview.setMaximumSize(display_width, display_height)
+            # Don't set fixed size - let it fit within the scroll area
 
         except Exception as e:
             print(f"[MainTab] Error in live preview: {e}")
