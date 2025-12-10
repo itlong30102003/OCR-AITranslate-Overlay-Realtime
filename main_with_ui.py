@@ -122,5 +122,5 @@ def main():
     sys.exit(app.exec())
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" or getattr(sys, 'frozen', False):
     main()
